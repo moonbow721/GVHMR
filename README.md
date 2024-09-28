@@ -51,6 +51,77 @@ To train the model, use the following command:
     ```
     During training, note that we do not employ post-processing as in the test script, so the global metrics results will differ (but should still be good for comparison with baseline methods).
 
+Here's a draft for the "Different from the original repo" section in the README:
+
+# Different from the original repo
+
+This version of the repository includes modifications to support multi-person HMR:
+
+1. Multi-person tracking:
+   - Updated the `Tracker` class to return bounding boxes for multiple people using `get_all_tracks` instead of `get_one_track`.
+   - Modified preprocessing to handle multiple person detections and features.
+
+2. Multi-person pose estimation:
+   - Adapted the `VitPoseExtractor` to process multiple people simultaneously.
+   - Updated the feature extraction process to handle batches of multiple people.
+
+3. Multi-person SMPL reconstruction:
+   - Modified the `DemoPL` class to predict SMPL parameters for multiple people.
+   - Updated the rendering process to handle multiple SMPL models in both in-camera and global coordinate systems.
+
+4. Rendering improvements:
+   - Implemented merged faces creation for rendering multiple SMPL models simultaneously.
+   - Added support for retargeting global translations to better align with in-camera positions.
+
+5. New demo script:
+   - Added `demo_multiperson.py` to showcase the multi-person reconstruction pipeline.
+   - Includes options for batch processing and verbose output for debugging.
+
+6. Performance optimizations:
+   - Introduced batch processing for VitPose and feature extraction to improve efficiency.
+
+Here's a draft for the "Results format" section in the README:
+
+# Results format
+
+## Preprocessing results
+
+1. `/preprocess/bbx.pt`:
+   - Contains bounding box information for multiple people
+   - `bbx_xyxy`: Tensor of shape (P, L, 4), where P is the number of people and L is the number of frames
+   - `bbx_xys`: Tensor of shape (P, L, 3), containing center coordinates and scale for each bounding box
+
+2. `/preprocess/slam_results.pt`:
+   - Camera pose estimation results (if not using static camera)
+   - NumPy array of shape (L, 7), where each row contains [x, y, z, qx, qy, qz, qw]
+
+3. `/preprocess/vitpose.pt`:
+   - 2D pose estimation results
+   - Tensor of shape (P, L, 17, 3), where 17 is the number of keypoints and 3 represents [x, y, confidence]
+
+4. `/preprocess/vit_features.pt`:
+   - Image features extracted from the video frames
+   - Tensor of shape (P, L, 1024), where 1024 is the feature dimension
+
+## GVHMR reconstruction results
+
+The main reconstruction results are stored in `hmr4d_results.pt`, which contains the following keys:
+
+1. `smpl_params_global` and `smpl_params_incam`:
+   - SMPL parameters for global and in-camera coordinate systems
+   - Each contains:
+     - `body_pose`: Tensor of shape (P, L, 63)
+     - `betas`: Tensor of shape (P, L, 10)
+     - `global_orient`: Tensor of shape (P, L, 3)
+     - `transl`: Tensor of shape (P, L, 3)
+
+2. `K_fullimg`:
+   - Camera intrinsic matrix
+   - Tensor of shape (L, 3, 3), same across all frames
+
+3. `net_outputs`:
+   - Additional network outputs (not used for now)
+
 # Citation
 
 If you find this code useful for your research, please use the following BibTeX entry.
