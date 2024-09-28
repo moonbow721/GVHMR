@@ -71,6 +71,49 @@ def draw_bbx_xyxy_on_image_batch(bbx_xyxy_batch, image_batch, mask=None, conf=No
     return image_batch_out
 
 
+
+def draw_bbx_xyxy_on_image_batch_multiperson(bbx_xyxy_batch, image_batch, conf=None):
+    """
+    Draw bounding boxes for multiple persons on a batch of images using xyxy format.
+    
+    Args:
+        bbx_xyxy_batch: numpy array of shape (num_persons, num_frames, 4)
+        image_batch: list of images or numpy array of shape (num_frames, height, width, 3)
+        conf: optional, list of lists of booleans for confidence
+    
+    Returns:
+        List of images with bounding boxes drawn
+    """
+    bbx_xyxy_batch = to_numpy(bbx_xyxy_batch)
+    num_persons, num_frames, _ = bbx_xyxy_batch.shape
+    assert num_frames == len(image_batch), "Number of frames in bbx_xyxy_batch and image_batch must match"
+    
+    # Generate a list of distinct colors for each person
+    colors = [(np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255)) for _ in range(num_persons)]
+    
+    image_batch_out = []
+    for frame_idx in range(num_frames):
+        image = to_numpy(image_batch[frame_idx]).copy()
+        for person_idx in range(num_persons):
+            bbx_xyxy = bbx_xyxy_batch[person_idx, frame_idx]
+            color = colors[person_idx]
+            
+            if conf is not None:
+                use_conf = conf[person_idx][frame_idx]
+            else:
+                use_conf = True
+            
+            if use_conf:
+                image = cv2.rectangle(image, 
+                                      (int(bbx_xyxy[0]), int(bbx_xyxy[1])), 
+                                      (int(bbx_xyxy[2]), int(bbx_xyxy[3])), 
+                                      color, 2)
+        
+        image_batch_out.append(image)
+    
+    return image_batch_out
+
+
 def draw_kpts(frame, keypoints, color=(0, 255, 0), thickness=2):
     frame_ = frame.copy()
     for x, y in keypoints:

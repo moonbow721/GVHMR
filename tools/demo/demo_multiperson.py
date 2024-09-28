@@ -1,3 +1,4 @@
+import os
 import cv2
 import torch
 import pytorch_lightning as pl
@@ -18,11 +19,11 @@ from hmr4d.utils.video_io_utils import (
     get_writer,
     get_video_reader,
 )
-from hmr4d.utils.vis.cv2_utils import draw_bbx_xyxy_on_image_batch, draw_coco17_skeleton_batch
+from hmr4d.utils.vis.cv2_utils import draw_coco17_skeleton_batch, draw_bbx_xyxy_on_image_batch_multiperson
 
 from hmr4d.utils.preproc import Tracker, Extractor, VitPoseExtractor, SLAMModel
 
-from hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy, estimate_K, convert_K_to_K4, create_camera_sensor
+from hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy_batch, estimate_K, convert_K_to_K4, create_camera_sensor
 from hmr4d.utils.geo_transform import compute_cam_angvel
 from hmr4d.model.gvhmr.gvhmr_pl_demo import DemoPL
 from hmr4d.utils.net_utils import detach_to_cpu, to_cuda
@@ -42,6 +43,8 @@ def parse_args_to_cfg():
     parser.add_argument("--video", type=str, default="inputs/demo/dance_3.mp4")
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
+    parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
     args = parser.parse_args()
 
@@ -57,6 +60,7 @@ def parse_args_to_cfg():
             f"video_name={video_path.stem}",
             f"static_cam={args.static_cam}",
             f"verbose={args.verbose}",
+            f"+batch_size={args.batch_size}",  # Add batch_size here
         ]
 
         # Allow to change output root
@@ -73,12 +77,16 @@ def parse_args_to_cfg():
     # Copy raw-input-video to video_path
     Log.info(f"[Copy Video] {video_path} -> {cfg.video_path}")
     if not Path(cfg.video_path).exists() or get_video_lwh(video_path)[0] != get_video_lwh(cfg.video_path)[0]:
-        reader = get_video_reader(video_path)
-        writer = get_writer(cfg.video_path, fps=30, crf=CRF)
-        for img in tqdm(reader, total=get_video_lwh(video_path)[0], desc=f"Copy"):
-            writer.write_frame(img)
-        writer.close()
-        reader.close()
+        # create a soft link
+        if args.recreate_video:
+            reader = get_video_reader(video_path)
+            writer = get_writer(cfg.video_path, fps=30, crf=CRF)
+            for img in tqdm(reader, total=get_video_lwh(video_path)[0], desc=f"Copy"):
+                writer.write_frame(img)
+            writer.close()
+            reader.close()
+        else:
+            os.system(f"ln -s {video_path} {cfg.video_path}")
 
     return cfg
 
@@ -91,27 +99,30 @@ def run_preprocess(cfg):
     paths = cfg.paths
     static_cam = cfg.static_cam
     verbose = cfg.verbose
+    batch_size = cfg.batch_size
 
     # Get bbx tracking result
     if not Path(paths.bbx).exists():
         tracker = Tracker()
-        bbx_xyxy = tracker.get_one_track(video_path).float()  # (L, 4)
-        bbx_xys = get_bbx_xys_from_xyxy(bbx_xyxy, base_enlarge=1.2).float()  # (L, 3) apply aspect ratio and enlarge
+        bbx_xyxy = tracker.get_all_tracks(video_path, frame_thres=0.5).float()  # (P, L, 4), discard short tracks
+        bbx_xys = get_bbx_xys_from_xyxy_batch(bbx_xyxy, base_enlarge=1.2).float()  # (P, L, 3) apply aspect ratio and enlarge
         torch.save({"bbx_xyxy": bbx_xyxy, "bbx_xys": bbx_xys}, paths.bbx)
         del tracker
     else:
         bbx_xys = torch.load(paths.bbx)["bbx_xys"]
         Log.info(f"[Preprocess] bbx (xyxy, xys) from {paths.bbx}")
+    print(f"person_num: {bbx_xys.shape[0]}")
+    
     if verbose:
         video = read_video_np(video_path)
         bbx_xyxy = torch.load(paths.bbx)["bbx_xyxy"]
-        video_overlay = draw_bbx_xyxy_on_image_batch(bbx_xyxy, video)
+        video_overlay = draw_bbx_xyxy_on_image_batch_multiperson(bbx_xyxy, video)
         save_video(video_overlay, cfg.paths.bbx_xyxy_video_overlay)
-
+        
     # Get VitPose
     if not Path(paths.vitpose).exists():
-        vitpose_extractor = VitPoseExtractor()
-        vitpose = vitpose_extractor.extract(video_path, bbx_xys)
+        vitpose_extractor = VitPoseExtractor(batch_size=batch_size)
+        vitpose, cropped_imgs = vitpose_extractor.extract_multiperson(video_path, bbx_xys)  # (P, F, 17, 3)
         torch.save(vitpose, paths.vitpose)
         del vitpose_extractor
     else:
@@ -119,13 +130,13 @@ def run_preprocess(cfg):
         Log.info(f"[Preprocess] vitpose from {paths.vitpose}")
     if verbose:
         video = read_video_np(video_path)
-        video_overlay = draw_coco17_skeleton_batch(video, vitpose, 0.5)
+        video_overlay = draw_coco17_skeleton_batch(video, vitpose[0], 0.5)
         save_video(video_overlay, paths.vitpose_video_overlay)
-
+        
     # Get vit features
     if not Path(paths.vit_features).exists():
-        extractor = Extractor()
-        vit_features = extractor.extract_video_features(video_path, bbx_xys)
+        extractor = Extractor(batch_size=batch_size)
+        vit_features = extractor.extract_video_features_multiperson(cropped_imgs, bbx_xys)  # (P, F, 1024)
         torch.save(vit_features, paths.vit_features)
         del extractor
     else:
@@ -176,6 +187,47 @@ def load_data_dict(cfg):
     return data
 
 
+def fetch_smpl_params(all_person_dict, person_idx):
+    return {k: v[person_idx] for k, v in all_person_dict.items()}
+
+
+def create_merged_faces(faces_smpl, person_num, vert_offset):
+    """
+    Create merged faces for rendering multiple persons.
+    
+    Args:
+        faces_smpl (numpy.ndarray): The original faces of the SMPL model, shape (face_num, 3).
+        person_num (int): The number of persons to be rendered.
+        vert_offset (int): The vertex offset for the current person.
+    Returns:
+        numpy.ndarray: The merged faces, shape (face_num * person_num, 3).
+    """
+    merged_faces = []
+    for i in range(person_num):
+        merged_faces.append(faces_smpl + i * vert_offset)
+    return np.concatenate(merged_faces, axis=0)
+    
+
+def retarget_transl(global_transl, incam_transl_start, xz_only=False):
+    """
+    Retarget the start point of the global translation to the start point of the incam translation.
+    
+    Args:
+        global_transl (torch.Tensor): The global translation, shape (P, F, 3).
+        incam_transl_start (torch.Tensor): The incam translation start point, shape (P, 3).
+    Returns:
+        torch.Tensor: The retargeted global translation, shape (P, F, 3).
+    """
+    if xz_only:
+        index = [0, 2]
+    else:
+        index = [0, 1, 2]
+    retargeted_transl = global_transl.clone()
+    retargeted_transl[:, 0, index] = incam_transl_start[:, index]
+    retargeted_transl[:, 1:, index] = global_transl[:, 1:, index] + (incam_transl_start[:, None, index] - global_transl[:, 0:1, index])
+    return retargeted_transl
+
+
 def render_incam(cfg):
     incam_video_path = Path(cfg.paths.incam_video)
     if incam_video_path.exists():
@@ -184,13 +236,21 @@ def render_incam(cfg):
 
     pred = torch.load(cfg.paths.hmr4d_results)
     smplx = make_smplx("supermotion").cuda()
-    smplx2smpl = torch.load("hmr4d/utils/body_model/smplx2smpl_sparse.pt").cuda()
-    faces_smpl = make_smplx("smpl").faces
+    smplx2smpl = torch.load("hmr4d/utils/body_model/smplx2smpl_sparse.pt").cuda()   # (6890, 10475) 
+    faces_smpl = make_smplx("smpl").faces   # (face_num, 3)
 
     # smpl
-    smplx_out = smplx(**to_cuda(pred["smpl_params_incam"]))
-    pred_c_verts = torch.stack([torch.matmul(smplx2smpl, v_) for v_ in smplx_out.vertices])
-
+    # import ipdb; ipdb.set_trace()
+    person_num = pred["smpl_params_incam"]["transl"].shape[0]
+    frame_num = pred["smpl_params_incam"]["transl"].shape[1]
+    merged_verts = []
+    for person_idx in range(person_num):
+        smplx_out = smplx(**to_cuda(fetch_smpl_params(pred["smpl_params_incam"], person_idx)))
+        pred_c_verts = torch.stack([torch.matmul(smplx2smpl, v_) for v_ in smplx_out.vertices])  # (F, 6890, 3)
+        merged_verts.append(pred_c_verts)
+    pred_c_verts = torch.stack(merged_verts, dim=1).reshape(frame_num, -1, 3)  # (F, P, 6890, 3) -> (F, P*6890, 3)
+    faces_smpl = create_merged_faces(faces_smpl, person_num, smplx2smpl.shape[0])
+    
     # -- rendering code -- #
     video_path = cfg.video_path
     length, width, height = get_video_lwh(video_path)
@@ -202,7 +262,7 @@ def render_incam(cfg):
     bbx_xys_render = torch.load(cfg.paths.bbx)["bbx_xys"]
 
     # -- render mesh -- #
-    verts_incam = pred_c_verts
+    verts_incam = pred_c_verts  # (F, V, 3)
     writer = get_writer(incam_video_path, fps=30, crf=CRF)
     for i, img_raw in tqdm(enumerate(reader), total=get_video_lwh(video_path)[0], desc=f"Rendering Incam"):
         img = renderer.render_mesh(verts_incam[i].cuda(), img_raw, [0.8, 0.8, 0.8])
@@ -212,7 +272,7 @@ def render_incam(cfg):
     reader.close()
 
 
-def render_global(cfg):
+def render_global(cfg, retarget=False):
     global_video_path = Path(cfg.paths.global_video)
     if global_video_path.exists():
         Log.info(f"[Render Global] Video already exists at {global_video_path}")
@@ -226,49 +286,65 @@ def render_global(cfg):
     J_regressor = torch.load("hmr4d/utils/body_model/smpl_neutral_J_regressor.pt").cuda()
 
     # smpl
-    smplx_out = smplx(**to_cuda(pred["smpl_params_global"]))
-    pred_ay_verts = torch.stack([torch.matmul(smplx2smpl, v_) for v_ in smplx_out.vertices])
+    global_transl = pred["smpl_params_global"]["transl"]
+    incam_transl_start = pred["smpl_params_incam"]["transl"][:, 0]
+    if retarget:
+        pred["smpl_params_global"]["transl"] = retarget_transl(global_transl, incam_transl_start, xz_only=False)
 
-    def move_to_start_point_face_z(verts):
-        "XZ to origin, Start from the ground, Face-Z"
-        # position
-        verts = verts.clone()  # (L, V, 3)
+    person_num = pred["smpl_params_global"]["transl"].shape[0]
+    merged_verts = []
+    for person_idx in range(person_num):
+        smplx_out = smplx(**to_cuda(fetch_smpl_params(pred["smpl_params_global"], person_idx)))
+        pred_ay_verts = torch.stack([torch.matmul(smplx2smpl, v_) for v_ in smplx_out.vertices])
+        merged_verts.append(pred_ay_verts)
+    pred_ay_verts = torch.stack(merged_verts, dim=1)  # (F, P, V, 3)
+    
+    # position
+    all_offset = []
+    for person_idx in range(person_num):
+        verts = pred_ay_verts[:, person_idx].clone()  # (L, V, 3)
         offset = einsum(J_regressor, verts[0], "j v, v i -> j i")[0]  # (3)
         offset[1] = verts[:, :, [1]].min()
-        verts = verts - offset
-        # face direction
-        T_ay2ayfz = compute_T_ayfz2ay(einsum(J_regressor, verts[[0]], "j v, l v i -> l j i"), inverse=True)
-        verts = apply_T_on_points(verts, T_ay2ayfz)
-        return verts
-
-    verts_glob = move_to_start_point_face_z(pred_ay_verts)
-    joints_glob = einsum(J_regressor, verts_glob, "j v, l v i -> l j i")  # (L, J, 3)
+        all_offset.append(offset)
+    offset = torch.mean(torch.stack(all_offset, dim=0), dim=0)
+    
+    # pred_ay_verts = pred_ay_verts - offset
+    # T_ay2ayfz = compute_T_ayfz2ay(einsum(J_regressor, pred_ay_verts[[0], 0], "j v, l v i -> l j i"), inverse=True)
+    
+    # verts_glob = []
+    # for person_idx in range(person_num):    
+    #     # verts_glob_person = apply_T_on_points(pred_ay_verts[:, person_idx], T_ay2ayfz)
+    #     verts_glob_person = torch.einsum("...ki,...ji->...jk", T_ay2ayfz[..., :3, :3], pred_ay_verts[:, person_idx])
+    #     verts_glob.append(verts_glob_person)
+    # verts_glob = torch.stack(verts_glob, dim=1)  # (F, P, V, 3)
+    
+    verts_glob = pred_ay_verts - offset
+        
+    joints_glob = einsum(J_regressor, verts_glob[:, 0], "j v, l v i -> l j i")  # (L, J, 3)
     global_R, global_T, global_lights = get_global_cameras_static(
-        verts_glob.cpu(),
-        beta=2.0,
-        cam_height_degree=20,
+        verts_glob[:, 0].cpu(),
+        beta=3.0,
+        cam_height_degree=25,
         target_center_height=1.0,
     )
-
     # -- rendering code -- #
     video_path = cfg.video_path
     length, width, height = get_video_lwh(video_path)
-    _, _, K = create_camera_sensor(width, height, 24)  # render as 24mm lens
+    _, _, K = create_camera_sensor(width, height, 18)  # render as 24mm lens
 
     # renderer
     renderer = Renderer(width, height, device="cuda", faces=faces_smpl, K=K)
-    # renderer = Renderer(width, height, device="cuda", faces=faces_smpl, K=K, bin_size=0)
 
     # -- render mesh -- #
-    scale, cx, cz = get_ground_params_from_points(joints_glob[:, 0], verts_glob)
-    renderer.set_ground(scale * 1.5, cx, cz)
+    scale, cx, cz = get_ground_params_from_points(joints_glob[:, 0], verts_glob[:, 0])
+    renderer.set_ground(scale * 4.0, cx, cz)
     color = torch.ones(3).float().cuda() * 0.8
 
     render_length = length if not debug_cam else 8
     writer = get_writer(global_video_path, fps=30, crf=CRF)
     for i in tqdm(range(render_length), desc=f"Rendering Global"):
         cameras = renderer.create_camera(global_R[i], global_T[i])
-        img = renderer.render_with_ground(verts_glob[[i]], color[None], cameras, global_lights)
+        img = renderer.render_with_ground(verts_glob[i], color[None].repeat(person_num, 1), cameras, global_lights)
         writer.write_frame(img)
     writer.close()
 
@@ -298,11 +374,11 @@ if __name__ == "__main__":
 
     # ===== Render ===== #
     render_incam(cfg)
-    render_global(cfg)
+    render_global(cfg, retarget=True)
     if not Path(paths.incam_global_horiz_video).exists():
         Log.info("[Merge Videos]")
         merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
 
 """
-python -m tools.demo.demo --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/two_persons.mp4
+CUDA_VISIBLE_DEVICES=1, python -m tools.demo.demo_multiperson --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
 """

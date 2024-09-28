@@ -1,27 +1,6 @@
 import torch
 import numpy as np
 
-# def get_frame_id_list_from_mask(mask):
-#     """
-#     Args:
-#         mask (F,), bool.
-#     Return:
-#         frame_id_list: List of frame_ids.
-#     """
-#     frame_id_list = []
-#     i = 0
-#     while i < len(mask):
-#         if not mask[i]:
-#             i += 1
-#         else:
-#             j = i
-#             while j < len(mask) and mask[j]:
-#                 j += 1
-#             frame_id_list.append(torch.arange(i, j))
-#             i = j
-
-#     return frame_id_list
-
 
 # From GPT
 def get_frame_id_list_from_mask(mask):

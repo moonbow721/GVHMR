@@ -20,6 +20,7 @@ class Tracker:
     def __init__(self) -> None:
         # https://docs.ultralytics.com/modes/predict/
         self.yolo = YOLO(PROJ_ROOT / "inputs/checkpoints/yolo/yolov8x.pt")
+        self.track_yaml = PROJ_ROOT / "inputs/checkpoints/yolo/custom_tracker.yaml"
 
     def track(self, video_path):
         track_history = []
@@ -29,6 +30,7 @@ class Tracker:
             "classes": 0,  # human
             "verbose": False,
             "stream": True,
+            # "tracker": self.track_yaml,
         }
         results = self.yolo.track(video_path, **cfg)
         # frame-by-frame tracking
@@ -93,3 +95,34 @@ class Tracker:
         bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
 
         return bbx_xyxy_one_track
+
+    def get_all_tracks(self, video_path, frame_thres=0.5):
+        # Track all objects in the video
+        track_history = self.track(video_path)
+
+        # Parse track_history & use all tracks
+        # import ipdb; ipdb.set_trace()
+        id_to_frame_ids, id_to_bbx_xyxys, id_sorted = self.sort_track_length(track_history, video_path)
+        
+        all_tracks = []
+        
+        for track_id in id_sorted:
+            frame_ids = torch.tensor(id_to_frame_ids[track_id])  # (N,)
+            if len(frame_ids) < frame_thres * get_video_lwh(video_path)[0]:
+                continue
+            bbx_xyxys = torch.tensor(id_to_bbx_xyxys[track_id])  # (N, 4)
+
+            # Interpolate missing frames
+            mask = frame_id_to_mask(frame_ids, get_video_lwh(video_path)[0])
+            bbx_xyxy_one_track = rearrange_by_mask(bbx_xyxys, mask)  # (F, 4), missing filled with 0
+            missing_frame_id_list = get_frame_id_list_from_mask(~mask)  # list of list
+            bbx_xyxy_one_track = linear_interpolate_frame_ids(bbx_xyxy_one_track, missing_frame_id_list)
+            assert (bbx_xyxy_one_track.sum(1) != 0).all()
+
+            bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
+            bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
+
+            # Append the processed track to the list
+            all_tracks.append(bbx_xyxy_one_track)
+
+        return torch.stack(all_tracks)  # (person_num, N, 4)

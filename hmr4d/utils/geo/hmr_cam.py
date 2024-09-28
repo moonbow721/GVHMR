@@ -295,6 +295,22 @@ def get_bbx_xys_from_xyxy(bbx_xyxy, base_enlarge=1.2):
     return bbx_xys
 
 
+def get_bbx_xys_from_xyxy_batch(bbx_xyxy, base_enlarge=1.2):
+    """
+    Args:
+        bbx_xyxy: (B, N, 4) [x1, y1, x2, y2]
+    Returns:
+        bbx_xys: (B, N, 3) [center_x, center_y, size]
+    """
+    B, N, _ = bbx_xyxy.size()
+    bbx_xys = torch.zeros((B, N, 3), dtype=bbx_xyxy.dtype, device=bbx_xyxy.device)
+
+    for b in range(B):
+        bbx_xys[b] = get_bbx_xys_from_xyxy(bbx_xyxy[b], base_enlarge=base_enlarge)
+
+    return bbx_xys
+
+
 def bbx_xyxy_from_x(p2d):
     """
     Args:
@@ -396,3 +412,4 @@ def get_infov_mask(p2d, w_real, h_real):
     else:
         mask = (x >= 0) * (x < w_real[..., None]) * (y >= 0) * (y < h_real[..., None])
     return mask
+

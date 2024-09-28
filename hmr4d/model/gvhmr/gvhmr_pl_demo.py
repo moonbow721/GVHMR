@@ -17,11 +17,11 @@ class DemoPL(pl.LightningModule):
         """auto add batch dim
         data: {
             "length": int, or Torch.Tensor,
-            "kp2d": (F, 3)
+            "kp2d": (F, 17, 3)
             "bbx_xys": (F, 3)
             "K_fullimg": (F, 3, 3)
-            "cam_angvel": (F, 3)
-            "f_imgseq": (F, 3, 256, 256)
+            "cam_angvel": (F, 6)
+            "f_imgseq": (F, 1024)
         }
 
         """
@@ -45,6 +45,41 @@ class DemoPL(pl.LightningModule):
         }
         return pred
 
+    @torch.no_grad()
+    def predict_multiperson(self, data, static_cam=False):
+        """auto add batch dim
+        data: {
+            "length": int, or Torch.Tensor,
+            "kp2d": (num_person, F, 17, 3)
+            "bbx_xys": (num_person, F, 3)
+            "K_fullimg": (F, 3, 3)
+            "cam_angvel": (F, 6)
+            "f_imgseq": (num_person, F, 1024)
+        }
+
+        """
+        # ROPE inference
+        num_person = data["kp2d"].shape[0]
+        batch = {
+            "length": data["length"].repeat(num_person,),
+            "obs": normalize_kp2d(data["kp2d"], data["bbx_xys"]),
+            "bbx_xys": data["bbx_xys"],
+            "K_fullimg": data["K_fullimg"][None].repeat(num_person, 1, 1, 1),
+            "cam_angvel": data["cam_angvel"][None].repeat(num_person, 1, 1),
+            "f_imgseq": data["f_imgseq"],
+        }
+        # import ipdb; ipdb.set_trace()
+        batch = {k: v.cuda() for k, v in batch.items()}
+        outputs = self.pipeline.forward(batch, train=False, postproc=True, static_cam=static_cam)
+
+        pred = {
+            "smpl_params_global": {k: v for k, v in outputs["pred_smpl_params_global"].items()},
+            "smpl_params_incam": {k: v for k, v in outputs["pred_smpl_params_incam"].items()},
+            "K_fullimg": data["K_fullimg"],
+            "net_outputs": outputs,  # intermediate outputs
+        }
+        return pred
+    
     def load_pretrained_model(self, ckpt_path):
         """Load pretrained checkpoint, and assign each weight to the corresponding part."""
         Log.info(f"[PL-Trainer] Loading ckpt type: {ckpt_path}")

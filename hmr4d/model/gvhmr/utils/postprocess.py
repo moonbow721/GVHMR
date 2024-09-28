@@ -53,11 +53,12 @@ def pp_static_joint(outputs, endecoder: EnDecoder):
     # Put the sequence on the ground by -min(y), this does not consider foot height, for o3d vis
     post_w_j3d = pred_w_j3d - pred_w_transl.unsqueeze(-2) + post_w_transl.unsqueeze(-2)
     ground_y = post_w_j3d[..., 1].flatten(-2).min(dim=-1)[0]  # (B,)  Minimum y value
-    post_w_transl[..., 1] -= ground_y
+    post_w_transl[..., 1] -= ground_y[:, None]
 
     return post_w_transl
 
 
+# TODO: check this later
 @autocast(enabled=False)
 def pp_static_joint_cam(outputs, endecoder: EnDecoder):
     """Use static joint and static camera assumption to postprocess the global transl"""
