@@ -380,5 +380,5 @@ if __name__ == "__main__":
         merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
 
 """
-CUDA_VISIBLE_DEVICES=1, python -m tools.demo.demo_multiperson --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
+CUDA_VISIBLE_DEVICES=1, python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
 """

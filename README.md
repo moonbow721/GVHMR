@@ -33,7 +33,12 @@ We also provide a script `demo_folder.py` to inference a entire folder.
 ```shell
 python tools/demo/demo.py --video=docs/example_video/tennis.mp4 -s
 python tools/demo/demo_folder.py -f inputs/demo/folder_in -d outputs/demo/folder_out -s
+python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
 ```
+
+### TODO:
+- Make the rendering videos the same fps as the input video.
+- Check `pp_static_joint_cam` in `./hmr4d/model/gvhmr/utils/postprocess.py`, which might be used for the `-s` option in the demo script.
 
 ### Reproduce
 1. **Test**:
