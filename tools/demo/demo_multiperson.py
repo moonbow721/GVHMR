@@ -1,7 +1,6 @@
 import os
 import cv2
 import torch
-import pytorch_lightning as pl
 import numpy as np
 import argparse
 from hmr4d.utils.pylogger import Log
@@ -9,6 +8,7 @@ import hydra
 from hydra import initialize_config_module, compose
 from pathlib import Path
 from pytorch3d.transforms import quaternion_to_matrix
+import subprocess
 
 from hmr4d.configs import register_store_gvhmr
 from hmr4d.utils.video_io_utils import (
@@ -35,6 +35,11 @@ from einops import einsum, rearrange
 
 
 CRF = 23  # 17 is lossless, every +6 halves the mp4 size
+def get_video_fps(video_path):
+    reader = cv2.VideoCapture(video_path)
+    fps = reader.get(cv2.CAP_PROP_FPS)
+    reader.release()
+    return fps
 
 
 def parse_args_to_cfg():
@@ -44,12 +49,14 @@ def parse_args_to_cfg():
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
-    parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps")
+    parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
+    parser.add_argument("--export_npy", action="store_true", help="If true, export npy files")
     args = parser.parse_args()
 
     # Input
     video_path = Path(args.video)
+    fps = get_video_fps(video_path) if not args.recreate_video else 30
     assert video_path.exists(), f"Video not found at {video_path}"
     length, width, height = get_video_lwh(video_path)
     Log.info(f"[Input]: {video_path}")
@@ -61,6 +68,8 @@ def parse_args_to_cfg():
             f"static_cam={args.static_cam}",
             f"verbose={args.verbose}",
             f"+batch_size={args.batch_size}",  # Add batch_size here
+            f"+fps={fps}",
+            f"+export_npy={args.export_npy}",
         ]
 
         # Allow to change output root
@@ -86,8 +95,9 @@ def parse_args_to_cfg():
             writer.close()
             reader.close()
         else:
-            os.system(f"ln -s {video_path} {cfg.video_path}")
-
+            os.system(f"ln -s {os.path.abspath(video_path)} {os.path.abspath(cfg.video_path)}")
+    os.system(f"ln -s {os.path.abspath(cfg.video_path)} {os.path.abspath(cfg.video_path).replace('0_input_video.mp4', 'valid_video.mp4')}")
+    
     return cfg
 
 
@@ -117,7 +127,7 @@ def run_preprocess(cfg):
         video = read_video_np(video_path)
         bbx_xyxy = torch.load(paths.bbx)["bbx_xyxy"]
         video_overlay = draw_bbx_xyxy_on_image_batch_multiperson(bbx_xyxy, video)
-        save_video(video_overlay, cfg.paths.bbx_xyxy_video_overlay)
+        save_video(video_overlay, cfg.paths.bbx_xyxy_video_overlay, fps=cfg.fps)
         
     # Get VitPose
     if not Path(paths.vitpose).exists():
@@ -131,7 +141,7 @@ def run_preprocess(cfg):
     if verbose:
         video = read_video_np(video_path)
         video_overlay = draw_coco17_skeleton_batch(video, vitpose[0], 0.5)
-        save_video(video_overlay, paths.vitpose_video_overlay)
+        save_video(video_overlay, paths.vitpose_video_overlay, fps=cfg.fps)
         
     # Get vit features
     if not Path(paths.vit_features).exists():
@@ -228,7 +238,7 @@ def retarget_transl(global_transl, incam_transl_start, xz_only=False):
     return retargeted_transl
 
 
-def render_incam(cfg):
+def render_incam(cfg, retarget=False):
     incam_video_path = Path(cfg.paths.incam_video)
     if incam_video_path.exists():
         Log.info(f"[Render Incam] Video already exists at {incam_video_path}")
@@ -240,7 +250,11 @@ def render_incam(cfg):
     faces_smpl = make_smplx("smpl").faces   # (face_num, 3)
 
     # smpl
-    # import ipdb; ipdb.set_trace()
+    if retarget:    
+        global_transl = pred["smpl_params_global"]["transl"]
+        incam_transl_start = pred["smpl_params_incam"]["transl"][:, 0]
+        pred["smpl_params_incam"]["transl"] = retarget_transl(global_transl, incam_transl_start, xz_only=False)
+        
     person_num = pred["smpl_params_incam"]["transl"].shape[0]
     frame_num = pred["smpl_params_incam"]["transl"].shape[1]
     merged_verts = []
@@ -263,7 +277,7 @@ def render_incam(cfg):
 
     # -- render mesh -- #
     verts_incam = pred_c_verts  # (F, V, 3)
-    writer = get_writer(incam_video_path, fps=30, crf=CRF)
+    writer = get_writer(incam_video_path, fps=cfg.fps, crf=CRF)
     for i, img_raw in tqdm(enumerate(reader), total=get_video_lwh(video_path)[0], desc=f"Rendering Incam"):
         img = renderer.render_mesh(verts_incam[i].cuda(), img_raw, [0.8, 0.8, 0.8])
 
@@ -308,16 +322,6 @@ def render_global(cfg, retarget=False):
         all_offset.append(offset)
     offset = torch.mean(torch.stack(all_offset, dim=0), dim=0)
     
-    # pred_ay_verts = pred_ay_verts - offset
-    # T_ay2ayfz = compute_T_ayfz2ay(einsum(J_regressor, pred_ay_verts[[0], 0], "j v, l v i -> l j i"), inverse=True)
-    
-    # verts_glob = []
-    # for person_idx in range(person_num):    
-    #     # verts_glob_person = apply_T_on_points(pred_ay_verts[:, person_idx], T_ay2ayfz)
-    #     verts_glob_person = torch.einsum("...ki,...ji->...jk", T_ay2ayfz[..., :3, :3], pred_ay_verts[:, person_idx])
-    #     verts_glob.append(verts_glob_person)
-    # verts_glob = torch.stack(verts_glob, dim=1)  # (F, P, V, 3)
-    
     verts_glob = pred_ay_verts - offset
         
     joints_glob = einsum(J_regressor, verts_glob[:, 0], "j v, l v i -> l j i")  # (L, J, 3)
@@ -341,7 +345,7 @@ def render_global(cfg, retarget=False):
     color = torch.ones(3).float().cuda() * 0.8
 
     render_length = length if not debug_cam else 8
-    writer = get_writer(global_video_path, fps=30, crf=CRF)
+    writer = get_writer(global_video_path, fps=cfg.fps, crf=CRF)
     for i in tqdm(range(render_length), desc=f"Rendering Global"):
         cameras = renderer.create_camera(global_R[i], global_T[i])
         img = renderer.render_with_ground(verts_glob[i], color[None].repeat(person_num, 1), cameras, global_lights)
@@ -368,17 +372,22 @@ if __name__ == "__main__":
         tic = Log.sync_time()
         pred = model.predict_multiperson(data, static_cam=cfg.static_cam)
         pred = detach_to_cpu(pred)
-        data_time = data["length"] / 30
+        data_time = data["length"] / cfg.fps
         Log.info(f"[HMR4D] Elapsed: {Log.sync_time() - tic:.2f}s for data-length={data_time:.1f}s")
         torch.save(pred, paths.hmr4d_results)
 
     # ===== Render ===== #
-    render_incam(cfg)
-    render_global(cfg, retarget=True)
+    retarget = False
+    render_incam(cfg, retarget=retarget)
+    render_global(cfg, retarget=retarget)
     if not Path(paths.incam_global_horiz_video).exists():
         Log.info("[Merge Videos]")
         merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
+    if cfg.export_npy:
+        smpl_folder = os.path.join(cfg.output_dir, "smpl_results")
+        subprocess.run(["python", "-m", "tools.demo.export_npy_files", "--input", paths.hmr4d_results, "--output", smpl_folder])
 
 """
-CUDA_VISIBLE_DEVICES=1, python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
+CUDA_VISIBLE_DEVICES=2, python -m tools.demo.demo_multiperson --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
+CUDA_VISIBLE_DEVICES=3, python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp
 """

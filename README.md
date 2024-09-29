@@ -127,6 +127,10 @@ The main reconstruction results are stored in `hmr4d_results.pt`, which contains
 3. `net_outputs`:
    - Additional network outputs (not used for now)
 
+## Warning
+
+The `smpl_params_global` params of different people starts from the same origin. To visualize the results, I retarget the global translations based on the first-frame of `smpl_params_incam` params.
+
 # Citation
 
 If you find this code useful for your research, please use the following BibTeX entry.
