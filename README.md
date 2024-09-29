@@ -20,6 +20,7 @@
 ## Setup
 
 Please see [installation](docs/INSTALL.md) for details.
+Don't install this repo as a package, it will cause errors when importing other modules.
 
 ## Quick Start
 
@@ -31,14 +32,15 @@ Please see [installation](docs/INSTALL.md) for details.
 Demo entries are provided in `tools/demo`. Use `-s` to skip visual odometry if you know the camera is static, otherwise the camera will be estimated by DPVO.
 We also provide a script `demo_folder.py` to inference a entire folder.
 ```shell
-python tools/demo/demo.py --video=docs/example_video/tennis.mp4 -s
-python tools/demo/demo_folder.py -f inputs/demo/folder_in -d outputs/demo/folder_out -s
-python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp --recreate_video
+python -m tools.demo.demo --video=docs/example_video/tennis.mp4 -s
+python -m tools.demo.demo_folder -f inputs/demo/folder_in -d outputs/demo/folder_out -s
+python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp --batch_size 64 --export_npy
+python -m tools.demo.demo_multiperson --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
 ```
 
 ### TODO:
-- Make the rendering videos the same fps as the input video.
-- Check `pp_static_joint_cam` in `./hmr4d/model/gvhmr/utils/postprocess.py`, which might be used for the `-s` option in the demo script.
+- Make the rendering videos the same fps as the input video (Done).
+- Check `pp_static_joint_cam` in `./hmr4d/model/gvhmr/utils/postprocess.py`, which might be used for the `-s` option in the demo script (Seem OK).
 
 ### Reproduce
 1. **Test**:

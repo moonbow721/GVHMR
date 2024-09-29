@@ -49,11 +49,16 @@ def parse_args_to_cfg():
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
+    parser.add_argument("--device", type=str, default="cuda:0", help="Device to use for rendering")
     parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
     parser.add_argument("--export_npy", action="store_true", help="If true, export npy files")
     args = parser.parse_args()
 
+    # Set device
+    device_id = args.device.split(":")[1]
+    os.environ["CUDA_VISIBLE_DEVICES"] = device_id
+    
     # Input
     video_path = Path(args.video)
     fps = get_video_fps(video_path) if not args.recreate_video else 30
