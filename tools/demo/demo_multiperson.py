@@ -46,6 +46,7 @@ def parse_args_to_cfg():
     # Put all args to cfg
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", type=str, default="inputs/demo/dance_3.mp4")
+    parser.add_argument("--video_name", type=str, default=None, help="by default to video_name")
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
@@ -53,6 +54,7 @@ def parse_args_to_cfg():
     parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
     parser.add_argument("--export_npy", action="store_true", help="If true, export npy files")
+    parser.add_argument("--skip_render", action="store_true", help="If true, skip rendering")
     args = parser.parse_args()
 
     # Set device
@@ -69,12 +71,13 @@ def parse_args_to_cfg():
     # Cfg
     with initialize_config_module(version_base="1.3", config_module=f"hmr4d.configs"):
         overrides = [
-            f"video_name={video_path.stem}",
+            f"video_name={video_path.stem}" if args.video_name is None else f"video_name={args.video_name}",
             f"static_cam={args.static_cam}",
             f"verbose={args.verbose}",
-            f"+batch_size={args.batch_size}",  # Add batch_size here
+            f"+batch_size={args.batch_size}",
             f"+fps={fps}",
             f"+export_npy={args.export_npy}",
+            f"+skip_render={args.skip_render}",
         ]
 
         # Allow to change output root
@@ -382,12 +385,16 @@ if __name__ == "__main__":
         torch.save(pred, paths.hmr4d_results)
 
     # ===== Render ===== #
-    retarget = False
-    render_incam(cfg, retarget=retarget)
-    render_global(cfg, retarget=retarget)
-    if not Path(paths.incam_global_horiz_video).exists():
-        Log.info("[Merge Videos]")
-        merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
+    if cfg.skip_render:
+        # delete 0_input_video.mp4
+        subprocess.run(["rm", cfg.video_path])
+    else:
+        retarget = True
+        render_incam(cfg)
+        render_global(cfg, retarget=retarget)
+        if not Path(paths.incam_global_horiz_video).exists():
+            Log.info("[Merge Videos]")
+            merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
     if cfg.export_npy:
         smpl_folder = os.path.join(cfg.output_dir, "smpl_results")
         subprocess.run(["python", "-m", "tools.demo.export_npy_files", "--input", paths.hmr4d_results, "--output", smpl_folder])
