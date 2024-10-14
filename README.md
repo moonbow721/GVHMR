@@ -87,8 +87,6 @@ This version of the repository includes modifications to support multi-person HM
 6. Performance optimizations:
    - Introduced batch processing for VitPose and feature extraction to improve efficiency.
 
-Here's a draft for the "Results format" section in the README:
-
 # Results format
 
 ## Preprocessing results
