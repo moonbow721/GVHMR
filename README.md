@@ -22,6 +22,8 @@
 Please see [installation](docs/INSTALL.md) for details.
 Don't install this repo as a package, it will cause errors when importing other modules.
 
+Install [hamer](https://github.com/geopavlakos/hamer) and link the vitpose-wholebody checkpoint in hamer (`./_DATA/vitpose_ckpts/vitpose+_huge/wholebody.pth`) to this repo `./inputs/checkpoints/vitpose/vitpose-h-coco-wholebody.pth`.
+
 ## Quick Start
 
 ### [<img src="https://i.imgur.com/QCojoJk.png" width="30"> Google Colab demo for GVHMR](https://colab.research.google.com/drive/1N9WSchizHv2bfQqkE9Wuiegw_OT7mtGj?usp=sharing)
@@ -39,8 +41,7 @@ python -m tools.demo.demo_multiperson --video=docs/example_video/vertical_dance.
 ```
 
 ### TODO:
-- Make the rendering videos the same fps as the input video (Done).
-- Check `pp_static_joint_cam` in `./hmr4d/model/gvhmr/utils/postprocess.py`, which might be used for the `-s` option in the demo script (Seem OK).
+- Merge MANO from hamer into smplx results.
 
 ### Reproduce
 1. **Test**:
@@ -57,8 +58,6 @@ To train the model, use the following command:
     python tools/train.py exp=gvhmr/mixed/mixed
     ```
     During training, note that we do not employ post-processing as in the test script, so the global metrics results will differ (but should still be good for comparison with baseline methods).
-
-Here's a draft for the "Different from the original repo" section in the README:
 
 # Different from the original repo
 
