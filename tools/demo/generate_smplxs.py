@@ -9,6 +9,7 @@ from hydra import initialize_config_module, compose
 from pathlib import Path
 from pytorch3d.transforms import quaternion_to_matrix
 import subprocess
+from torch.utils.data import DataLoader, ConcatDataset
 
 from hmr4d.configs import register_store_gvhmr
 from hmr4d.utils.video_io_utils import (
@@ -19,9 +20,9 @@ from hmr4d.utils.video_io_utils import (
     get_writer,
     get_video_reader,
 )
-from hmr4d.utils.vis.cv2_utils import draw_coco17_skeleton_batch, draw_bbx_xyxy_on_image_batch_multiperson
+from hmr4d.utils.vis.cv2_utils import draw_coco17_skeleton_batch, draw_coco133_skeleton_batch, draw_bbx_xyxy_on_image_batch_multiperson
 
-from hmr4d.utils.preproc import Tracker, Extractor, VitPoseExtractor, SLAMModel
+from hmr4d.utils.preproc import Tracker, Extractor, VitPoseExtractor, VitPoseWholebodyExtractor, SLAMModel
 
 from hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy_batch, estimate_K, convert_K_to_K4, create_camera_sensor
 from hmr4d.utils.geo_transform import compute_cam_angvel
@@ -32,6 +33,10 @@ from hmr4d.utils.vis.renderer import Renderer, get_global_cameras_static, get_gr
 from tqdm import tqdm
 from hmr4d.utils.geo_transform import apply_T_on_points, compute_T_ayfz2ay
 from einops import einsum, rearrange
+
+from hmr4d.utils.datasets.vitdet_dataset import ViTDetDataset, recursive_to
+
+from hamer.models import load_hamer, DEFAULT_CHECKPOINT_HAMER
 
 
 CRF = 23  # 17 is lossless, every +6 halves the mp4 size
@@ -131,14 +136,14 @@ def run_preprocess(cfg):
         bbx_xys = torch.load(paths.bbx)["bbx_xys"]
         Log.info(f"[Preprocess] bbx (xyxy, xys) from {paths.bbx}")
     print(f"person_num: {bbx_xys.shape[0]}")
-    
     if verbose:
         video = read_video_np(video_path)
         bbx_xyxy = torch.load(paths.bbx)["bbx_xyxy"]
         video_overlay = draw_bbx_xyxy_on_image_batch_multiperson(bbx_xyxy, video)
         save_video(video_overlay, cfg.paths.bbx_xyxy_video_overlay, fps=cfg.fps)
-        
+    
     # Get VitPose
+    cropped_imgs = None
     if not Path(paths.vitpose).exists():
         vitpose_extractor = VitPoseExtractor(batch_size=batch_size)
         vitpose, cropped_imgs = vitpose_extractor.extract_multiperson(video_path, bbx_xys)  # (P, F, 17, 3)
@@ -151,7 +156,44 @@ def run_preprocess(cfg):
         video = read_video_np(video_path)
         video_overlay = draw_coco17_skeleton_batch(video, vitpose[0], 0.5)
         save_video(video_overlay, paths.vitpose_video_overlay, fps=cfg.fps)
-        
+    
+    # Get VitPose-wholebody
+    if not Path(paths.vitpose_wholebody).exists():
+        vitpose_extractor = VitPoseWholebodyExtractor(batch_size=batch_size)
+        inputs = cropped_imgs if cropped_imgs is not None else video_path
+        vitpose, _ = vitpose_extractor.extract_multiperson(inputs, bbx_xys)  # (P, F, 133, 3)
+        torch.save(vitpose, paths.vitpose_wholebody)
+        del vitpose_extractor
+    else:
+        vitpose = torch.load(paths.vitpose_wholebody)
+        Log.info(f"[Preprocess] vitpose-wholebody from {paths.vitpose_wholebody}")
+    if verbose:
+        video = read_video_np(video_path)
+        video_overlay = draw_coco133_skeleton_batch(video, vitpose[0], 0.5)
+        save_video(video_overlay, paths.vitpose_wholebody_video_overlay, fps=cfg.fps)
+    
+    # Setup HaMeR model
+    hamer_model, model_cfg_hamer = load_hamer(DEFAULT_CHECKPOINT_HAMER)
+    hamer_model = hamer_model.cuda()
+    hamer_model.eval()
+    # create hamer dataset
+    frames = read_frames(video_path)
+    hamer_dataloader = load_images(frames, vitpose, model_cfg_hamer)
+    for batch in hamer_dataloader:
+        batch = recursive_to(batch, target="cuda")
+        mano_poses = predict_mano(batch, hamer_model)
+        for k, v in mano_poses.items():
+            print(f"{k}: {v.shape}")
+        import ipdb; ipdb.set_trace()
+    '''
+    left_hand_global_orient: torch.Size([32, 1, 3, 3])
+    left_hand_pose: torch.Size([32, 15, 3, 3])
+    right_hand_global_orient: torch.Size([32, 1, 3, 3])
+    right_hand_pose: torch.Size([32, 15, 3, 3])
+    left_hand_valid: torch.Size([32])
+    right_hand_valid: torch.Size([32])
+    '''
+    
     # Get vit features
     if not Path(paths.vit_features).exists():
         extractor = Extractor(batch_size=batch_size)
@@ -362,6 +404,123 @@ def render_global(cfg, retarget=False):
     writer.close()
 
 
+def read_frames(video_path):
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+    cap.release()
+    return frames
+
+
+def load_images(cv2_images, wholebody_kpts, model_cfg):
+    hand_datasets = []
+
+    for idx, img_cv2 in enumerate(cv2_images):
+        vitposes_out = wholebody_kpts[:, idx]  # (P, F, 133, 3) -> (P, 133, 3)
+        person_num = vitposes_out.shape[0]
+        bboxes, is_right, is_valid = [], [], []
+        for person_idx in range(person_num):
+            vitposes = vitposes_out[person_idx]
+            left_hand_keyp = vitposes[-42:-21]
+            right_hand_keyp = vitposes[-21:]
+
+            keyp = left_hand_keyp
+            valid = keyp[:, 2] > 0.5
+            if sum(valid) > 3:
+                bbox = [keyp[valid, 0].min(), keyp[valid, 1].min(), keyp[valid, 0].max(), keyp[valid, 1].max()]
+            else:
+                bbox = [keyp[:, 0].min(), keyp[:, 1].min(), keyp[:, 0].max(), keyp[:, 1].max()]
+            bboxes.append(bbox)
+            is_right.append(0)
+            is_valid.append(sum(valid) > 3)
+            
+            keyp = right_hand_keyp
+            valid = keyp[:, 2] > 0.5
+            if sum(valid) > 3:
+                bbox = [keyp[valid, 0].min(), keyp[valid, 1].min(), keyp[valid, 0].max(), keyp[valid, 1].max()]
+            else:
+                bbox = [keyp[:, 0].min(), keyp[:, 1].min(), keyp[:, 0].max(), keyp[:, 1].max()]
+            bboxes.append(bbox)
+            is_right.append(1)
+            is_valid.append(sum(valid) > 3)
+
+        if len(bboxes) == 0:
+            bboxes, right, valid = np.empty((0, 4)), np.empty(0), np.empty(0)
+        else:
+            bboxes, right, valid = np.array(bboxes), np.array(is_right), np.array(is_valid)
+            
+        hand_dataset = ViTDetDataset(model_cfg, img_cv2, bboxes, right, valid, rescale_factor=2.0)
+        hand_datasets.append(hand_dataset)
+
+    concatenated_hand_dataset = ConcatDataset(hand_datasets)
+    hand_dataloader = DataLoader(concatenated_hand_dataset, batch_size=64, shuffle=False, num_workers=0)
+    return hand_dataloader
+
+
+def predict_mano(batch, model):
+    batch_size = batch['img'].shape[0]
+    with torch.no_grad():
+        out = model(batch)
+    flip_idx = batch['right'] == 0
+    invalid_idx = batch['valid'] == 0   # might be invisible, set as default hand pose
+    assert flip_idx.sum() == batch_size // 2, f"flip_idx: {flip_idx.sum()}, batch_size: {batch_size}"
+    
+    mano_params = out['pred_mano_params']
+    global_orient = mano_params['global_orient'].reshape(batch_size, -1, 3, 3)
+    hand_pose = mano_params['hand_pose'].reshape(batch_size, -1, 3, 3)
+    hand_pose[invalid_idx] = torch.zeros_like(hand_pose[invalid_idx])
+    # Flip the hand pose
+    reflection_matrix = torch.tensor([
+        [1, -1, -1],
+        [-1, 1, 1],
+        [-1, 1, 1]
+    ], dtype=torch.float32).cuda()
+    global_orient[flip_idx] = torch.einsum('bkij,ij->bkij', global_orient[flip_idx], reflection_matrix)
+    hand_pose[flip_idx] = torch.einsum('bkij,ij->bkij', hand_pose[flip_idx], reflection_matrix)
+    mano_poses = {
+        'left_hand_global_orient': global_orient[flip_idx],
+        'left_hand_pose': hand_pose[flip_idx],
+        'right_hand_global_orient': global_orient[~flip_idx],
+        'right_hand_pose': hand_pose[~flip_idx],
+        'left_hand_valid': batch['valid'][flip_idx],
+        'right_hand_valid': batch['valid'][~flip_idx]
+    }
+    return mano_poses
+
+
+def merge_mano_to_smpl(smpls, manos, replace_wrist=True):
+    batch_size = smpls['body_pose'].shape[0]
+    
+    smplx_params = {k: torch.from_numpy(v).cuda() for k, v in smpls.items()}
+    global_orient = smplx_params['global_orient']
+    smplx_params['left_hand_pose'] = manos['left_hand_pose']
+    smplx_params['right_hand_pose'] = manos['right_hand_pose']
+    if replace_wrist:
+        left_wrist_chain = np.array([3, 6, 9, 13, 16, 18]) - 1  # pelvis (-1, global orient) -> spine1 -> spine2 -> spine3 -> left_collar -> left_shoulder -> left_elbow
+        right_wrist_chain = np.array([3, 6, 9, 14, 17, 19]) - 1  # pelvis (-1, global orient) -> spine1 -> spine2 -> spine3 -> right_collar -> right_shoulder -> right_elbow
+        left_wrist_pose = global_orient.clone()
+        for idx in left_wrist_chain:
+            left_wrist_pose = torch.matmul(left_wrist_pose, smplx_params['body_pose'][:, idx:idx+1])
+        right_wrist_pose = global_orient.clone()
+        for idx in right_wrist_chain:
+            right_wrist_pose = torch.matmul(right_wrist_pose, smplx_params['body_pose'][:, idx:idx+1])
+        
+        left_idx, right_idx = manos['left_hand_valid'] == 1, manos['right_hand_valid'] == 1
+        smplx_params['body_pose'][left_idx, 19:20] = torch.matmul(torch.inverse(left_wrist_pose[left_idx]), manos['left_hand_global_orient'][left_idx])
+        smplx_params['body_pose'][right_idx, 20:21] = torch.matmul(torch.inverse(right_wrist_pose[right_idx]), manos['right_hand_global_orient'][right_idx])
+
+    smplx_output = smplx_model(**smplx_params)
+    verts = [smplx_output.vertices.detach().cpu().numpy()[j] for j in range(batch_size)]
+        
+    smplx_params = {k: v.detach().cpu().numpy() for k, v in smplx_params.items()}
+    
+    return verts, smplx_params
+
+
 if __name__ == "__main__":
     cfg = parse_args_to_cfg()
     paths = cfg.paths
@@ -401,7 +560,7 @@ if __name__ == "__main__":
         subprocess.run(["python", "-m", "tools.demo.export_npy_files", "--input", paths.hmr4d_results, "--output", smpl_folder])
 
 """
-CUDA_VISIBLE_DEVICES=2, python -m tools.demo.demo_multiperson --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
-CUDA_VISIBLE_DEVICES=5, python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp
-CUDA_VISIBLE_DEVICES=3, python -m tools.demo.demo_multiperson --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
+CUDA_VISIBLE_DEVICES=2, python -m tools.demo.generate_smplxs --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
+CUDA_VISIBLE_DEVICES=1, python -m tools.demo.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands
+CUDA_VISIBLE_DEVICES=3, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
 """

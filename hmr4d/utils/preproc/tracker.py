@@ -39,7 +39,8 @@ class Tracker:
             if result.boxes.id is not None:
                 track_ids = result.boxes.id.int().cpu().tolist()  # (N)
                 bbx_xyxy = result.boxes.xyxy.cpu().numpy()  # (N, 4)
-                result_frame = [{"id": track_ids[i], "bbx_xyxy": bbx_xyxy[i]} for i in range(len(track_ids))]
+                bbx_conf = result.boxes.conf.cpu().numpy()  # (N)
+                result_frame = [{"id": track_ids[i], "bbx_xyxy": bbx_xyxy[i], "conf": bbx_conf[i]} for i in range(len(track_ids))]
             else:
                 result_frame = []
             track_history.append(result_frame)
@@ -51,13 +52,17 @@ class Tracker:
         """This handles the track history from YOLO tracker."""
         id_to_frame_ids = defaultdict(list)
         id_to_bbx_xyxys = defaultdict(list)
+        id_to_confs = defaultdict(list)
         # parse to {det_id : [frame_id]}
         for frame_id, frame in enumerate(track_history):
             for det in frame:
                 id_to_frame_ids[det["id"]].append(frame_id)
                 id_to_bbx_xyxys[det["id"]].append(det["bbx_xyxy"])
+                id_to_confs[det["id"]].append(det["conf"])
         for k, v in id_to_bbx_xyxys.items():
             id_to_bbx_xyxys[k] = np.array(v)
+        for k, v in id_to_confs.items():
+            id_to_confs[k] = np.array(v)
 
         # Sort by length of each track (max to min)
         id_length = {k: len(v) for k, v in id_to_frame_ids.items()}
@@ -72,29 +77,33 @@ class Tracker:
         id2area_sum = dict(sorted(id_area_sum.items(), key=lambda item: item[1], reverse=True))
         id_sorted = list(id2area_sum.keys())
 
-        return id_to_frame_ids, id_to_bbx_xyxys, id_sorted
+        return id_to_frame_ids, id_to_bbx_xyxys, id_to_confs, id_sorted
 
     def get_one_track(self, video_path):
         # track
         track_history = self.track(video_path)
 
         # parse track_history & use top1 track
-        id_to_frame_ids, id_to_bbx_xyxys, id_sorted = self.sort_track_length(track_history, video_path)
+        id_to_frame_ids, id_to_bbx_xyxys, id_to_confs, id_sorted = self.sort_track_length(track_history, video_path)
         track_id = id_sorted[0]
         frame_ids = torch.tensor(id_to_frame_ids[track_id])  # (N,)
         bbx_xyxys = torch.tensor(id_to_bbx_xyxys[track_id])  # (N, 4)
+        confs = torch.tensor(id_to_confs[track_id])  # (N,)
 
         # interpolate missing frames
         mask = frame_id_to_mask(frame_ids, get_video_lwh(video_path)[0])
         bbx_xyxy_one_track = rearrange_by_mask(bbx_xyxys, mask)  # (F, 4), missing filled with 0
+        conf_one_track = rearrange_by_mask(confs, mask)  # (F,), missing filled with 0
         missing_frame_id_list = get_frame_id_list_from_mask(~mask)  # list of list
         bbx_xyxy_one_track = linear_interpolate_frame_ids(bbx_xyxy_one_track, missing_frame_id_list)
+        conf_one_track = linear_interpolate_frame_ids(conf_one_track, missing_frame_id_list)
         assert (bbx_xyxy_one_track.sum(1) != 0).all()
 
         bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
         bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
+        conf_one_track = moving_average_smooth(conf_one_track, window_size=5, dim=0)
 
-        return bbx_xyxy_one_track
+        return bbx_xyxy_one_track, conf_one_track
 
     def get_all_tracks(self, video_path, frame_thres=0.5):
         # Track all objects in the video
@@ -102,27 +111,34 @@ class Tracker:
 
         # Parse track_history & use all tracks
         # import ipdb; ipdb.set_trace()
-        id_to_frame_ids, id_to_bbx_xyxys, id_sorted = self.sort_track_length(track_history, video_path)
+        id_to_frame_ids, id_to_bbx_xyxys, id_to_confs, id_sorted = self.sort_track_length(track_history, video_path)
         
         all_tracks = []
+        all_confs = []
         
         for track_id in id_sorted:
             frame_ids = torch.tensor(id_to_frame_ids[track_id])  # (N,)
             if len(frame_ids) < frame_thres * get_video_lwh(video_path)[0]:
                 continue
+            print(f"bbx_xyxys.shape: {torch.tensor(id_to_bbx_xyxys[track_id]).shape}, confs.shape: {torch.tensor(id_to_confs[track_id]).shape}")
             bbx_xyxys = torch.tensor(id_to_bbx_xyxys[track_id])  # (N, 4)
+            confs = torch.tensor(id_to_confs[track_id])  # (N,)
 
             # Interpolate missing frames
             mask = frame_id_to_mask(frame_ids, get_video_lwh(video_path)[0])
             bbx_xyxy_one_track = rearrange_by_mask(bbx_xyxys, mask)  # (F, 4), missing filled with 0
+            conf_one_track = rearrange_by_mask(confs, mask)  # (F,), missing filled with 0
             missing_frame_id_list = get_frame_id_list_from_mask(~mask)  # list of list
             bbx_xyxy_one_track = linear_interpolate_frame_ids(bbx_xyxy_one_track, missing_frame_id_list)
+            conf_one_track = linear_interpolate_frame_ids(conf_one_track, missing_frame_id_list)
             assert (bbx_xyxy_one_track.sum(1) != 0).all()
 
             bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
             bbx_xyxy_one_track = moving_average_smooth(bbx_xyxy_one_track, window_size=5, dim=0)
+            conf_one_track = moving_average_smooth(conf_one_track, window_size=5, dim=0)
 
             # Append the processed track to the list
             all_tracks.append(bbx_xyxy_one_track)
+            all_confs.append(conf_one_track)
 
-        return torch.stack(all_tracks)  # (person_num, N, 4)
+        return torch.stack(all_tracks).float(), torch.stack(all_confs).float()  # (person_num, N, 4), (person_num, N)

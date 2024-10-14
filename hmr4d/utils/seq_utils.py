@@ -109,7 +109,7 @@ def mask_to_frame_id(mask):
 def linear_interpolate_frame_ids(data, frame_id_list):
     data = data.clone()
     for i, invalid_frame_ids in enumerate(frame_id_list):
-        # interplate between prev, next
+        # interpolate between prev, next
         # if at beginning or end, use the same value
         if invalid_frame_ids[0] - 1 < 0 or invalid_frame_ids[-1] + 1 >= len(data):
             if invalid_frame_ids[0] - 1 < 0:
@@ -119,9 +119,14 @@ def linear_interpolate_frame_ids(data, frame_id_list):
         else:
             prev = data[invalid_frame_ids[0] - 1]
             next = data[invalid_frame_ids[-1] + 1]
-            data[invalid_frame_ids] = (
-                torch.linspace(0, 1, len(invalid_frame_ids) + 2)[1:-1][:, None] * (next - prev)[None] + prev[None]
-            )
+            
+            # Handle both 1D and 2D tensors
+            if data.dim() == 1:
+                data[invalid_frame_ids] = torch.linspace(prev, next, len(invalid_frame_ids) + 2)[1:-1]
+            else:
+                interpolation = torch.linspace(0, 1, len(invalid_frame_ids) + 2)[1:-1]
+                data[invalid_frame_ids] = interpolation.unsqueeze(-1) * (next - prev) + prev
+
     return data
 
 

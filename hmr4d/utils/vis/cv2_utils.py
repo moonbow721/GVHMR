@@ -2,7 +2,7 @@ import torch
 import cv2
 import numpy as np
 from hmr4d.utils.wis3d_utils import get_colors_by_conf
-
+from hmr4d.utils.datasets.coco_wholebody import dataset_info
 
 def to_numpy(x):
     if isinstance(x, np.ndarray):
@@ -184,4 +184,47 @@ def draw_coco17_skeleton_batch(imgs, keypoints_batch, conf_thr=0):
     imgs_out = []
     for i in range(len(imgs)):
         imgs_out.append(draw_coco17_skeleton(imgs[i], keypoints_batch[i], conf_thr))
+    return imgs_out
+
+def draw_coco133_skeleton(img, keypoints, conf_thr=0):
+    img = img.copy()
+    keypoints = np.asarray(keypoints)
+    use_conf_thr = True if keypoints.shape[1] == 3 else False
+
+    # Create a mapping from joint names to their indices
+    name_to_id = {v['name']: v['id'] for k, v in dataset_info['keypoint_info'].items()}
+
+    # Loop over each bone in the skeleton
+    for bone_info in dataset_info['skeleton_info'].values():
+        link = bone_info['link']  # Tuple of joint names
+        joint_name1, joint_name2 = link
+        idx1 = name_to_id[joint_name1]
+        idx2 = name_to_id[joint_name2]
+
+        color = tuple(bone_info['color'])  # Convert color to tuple
+
+        kp1 = keypoints[idx1][:2].astype(int)
+        kp2 = keypoints[idx2][:2].astype(int)
+
+        if use_conf_thr:
+            kp1_c = keypoints[idx1][2]
+            kp2_c = keypoints[idx2][2]
+            if kp1_c > conf_thr and kp2_c > conf_thr:
+                img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, 2)
+            if kp1_c > conf_thr:
+                img = cv2.circle(img, (kp1[0], kp1[1]), 3, color, -1)
+            if kp2_c > conf_thr:
+                img = cv2.circle(img, (kp2[0], kp2[1]), 3, color, -1)
+        else:
+            img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, 2)
+            img = cv2.circle(img, (kp1[0], kp1[1]), 3, color, -1)
+            img = cv2.circle(img, (kp2[0], kp2[1]), 3, color, -1)
+    return img
+
+def draw_coco133_skeleton_batch(imgs, keypoints_batch, conf_thr=0):
+    assert len(imgs) == len(keypoints_batch)
+    keypoints_batch = to_numpy(keypoints_batch)
+    imgs_out = []
+    for i in range(len(imgs)):
+        imgs_out.append(draw_coco133_skeleton(imgs[i], keypoints_batch[i], conf_thr))
     return imgs_out

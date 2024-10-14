@@ -8,12 +8,48 @@ from .builder.backbones import ViT
 
 # print(model)
 import torch
+import re
+import copy
 from functools import partial
 import torch.nn as nn
 import torch.nn.functional as F
 from importlib import import_module
 
 models = {
+    "ViTPose_huge_wholebody_256x192": dict(
+        type="TopDown",
+        pretrained=None,
+        backbone=dict(
+            type="ViT",
+            img_size=(256, 192),
+            patch_size=16,
+            embed_dim=1280,
+            depth=32,
+            num_heads=16,
+            ratio=1,
+            use_checkpoint=False,
+            mlp_ratio=4,
+            qkv_bias=True,
+            drop_path_rate=0.3,
+        ),
+        keypoint_head=dict(
+            type="TopdownHeatmapSimpleHead",
+            in_channels=1280,
+            num_deconv_layers=2,
+            num_deconv_filters=(256, 256),
+            num_deconv_kernels=(4, 4),
+            extra=dict(final_conv_kernel=1,),
+            out_channels=133,
+            loss_keypoint=dict(type="JointsMSELoss", use_target_weight=True),
+        ),
+        train_cfg=dict(),
+        test_cfg=dict(
+            flip_test=True,
+            post_process='default',
+            shift_heatmap=True,
+            modulate_kernel=11
+        ),
+    ),
     "ViTPose_huge_coco_256x192": dict(
         type="TopDown",
         pretrained=None,
@@ -159,8 +195,19 @@ def build_model(model_name, checkpoint=None):
     pose = VitPoseModel(backbone, head)
     if checkpoint is not None:
         check = torch.load(checkpoint)
-
-        pose.load_state_dict(check["state_dict"])
+        # part_features = 256
+        # state_dict = check["state_dict"]
+        # new_state_dict = copy.deepcopy(state_dict)
+        # if part_features is not None:
+        #     current_keys = list(pose.state_dict().keys())
+        #     for key in current_keys:
+        #         if "mlp.experts" in key:
+        #             source_key = re.sub(r'experts.\d+.', 'fc2.', key)
+        #             new_state_dict[key] = state_dict[source_key][-part_features:]
+        #         elif 'fc2' in key:
+        #             new_state_dict[key] = state_dict[key][:-part_features]
+                
+        pose.load_state_dict(check["state_dict"], strict=False)
     return pose
 
 
