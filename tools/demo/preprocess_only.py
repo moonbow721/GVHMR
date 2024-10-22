@@ -109,7 +109,7 @@ def parse_args_to_cfg():
     except FileExistsError:
         os.remove(valid_video_path)
         shutil.copy2(os.path.abspath(cfg.video_path), valid_video_path)
-    
+        
     return cfg
 
 
@@ -149,7 +149,7 @@ def run_preprocess(cfg):
         vitpose_extractor = VitPoseWholebodyExtractor(batch_size=batch_size)
         vitpose_wholebody, cropped_imgs = vitpose_extractor.extract_multiperson(video_path, bbx_xys)  # (P, F, 133, 3)
         torch.save(vitpose_wholebody, paths.vitpose_wholebody)
-        del vitpose_extracto
+        del vitpose_extractor
     else:
         vitpose_wholebody = torch.load(paths.vitpose_wholebody, weights_only=True)
         Log.info(f"[Preprocess] vitpose-wholebody from {paths.vitpose_wholebody}")
@@ -162,7 +162,6 @@ def run_preprocess(cfg):
     if not Path(paths.vitpose).exists():
         vitpose = vitpose_wholebody[:, :, :17, :]  # (P, F, 17, 3)
         torch.save(vitpose, paths.vitpose)
-        del vitpose_extractor
     else:
         vitpose = torch.load(paths.vitpose, weights_only=True)
         Log.info(f"[Preprocess] vitpose from {paths.vitpose}")
@@ -314,6 +313,9 @@ if __name__ == "__main__":
 
     # ===== Preprocess and save to disk ===== #
     run_preprocess(cfg)
+    # delete 0_input_video.mp4
+    subprocess.run(["rm", cfg.video_path])
+    
 """
 CUDA_VISIBLE_DEVICES=2, python -m tools.demo.preprocess_only --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
 CUDA_VISIBLE_DEVICES=7, python -m tools.demo.preprocess_only --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --verbose

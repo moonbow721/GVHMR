@@ -55,12 +55,12 @@ def convert_hmr4d_to_npy(input_file, output_dir, body_model_dir, smpl_type, mano
         device (torch.device): CUDA device for processing.
     """
     # Load the hmr4d_results.pt file
-    data = torch.load(input_file, map_location=device)
+    data = torch.load(input_file, map_location=device, weights_only=True)
 
     # Load mano params if provided
     mano_params = None
     if mano_params_file:
-        mano_params = torch.load(mano_params_file, map_location=device)
+        mano_params = torch.load(mano_params_file, map_location=device, weights_only=True)
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
