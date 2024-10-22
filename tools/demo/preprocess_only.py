@@ -1,8 +1,8 @@
 import os
 import shutil
+import numpy as np
 import cv2
 import torch
-import numpy as np
 import argparse
 from hmr4d.utils.pylogger import Log
 import hydra
@@ -72,8 +72,6 @@ def parse_args_to_cfg():
             f"verbose={args.verbose}",
             f"+batch_size={args.batch_size}",
             f"+fps={round(fps)}",
-            f"+export_npy={args.export_npy}",
-            f"+skip_render={args.skip_render}",
         ]
 
         # Allow to change output root
