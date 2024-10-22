@@ -4,13 +4,14 @@ import torch
 import argparse
 from pathlib import Path
 from tqdm import tqdm
-from smplx import SMPLXLayer
+from smplx import SMPLHLayer, SMPLXLayer
 
 def merge_mano_to_smpl(smpls, manos, replace_wrist=True):
     # smplx body pose: [batchsize, 21, 3, 3] (rotation matrix)
     batch_size = smpls['body_pose'].shape[0]
     
     smplx_params = {k: v.clone() for k, v in smpls.items()}
+    smplx_params['body_pose'] = smpls['body_pose'][:, :21]
     global_orient = smplx_params['global_orient']
     smplx_params['left_hand_pose'] = manos['left_hand_pose']
     smplx_params['right_hand_pose'] = manos['right_hand_pose']
@@ -41,14 +42,15 @@ def fetch_frame_dict(all_dict, frame_idx):
     return frame_dict
     
 
-def convert_hmr4d_to_npy(input_file, output_dir, smplx_model_path, mano_params_file, device):
+def convert_hmr4d_to_npy(input_file, output_dir, body_model_dir, smpl_type, mano_params_file, device):
     """
     Convert hmr4d_results.pt to a batch of .npy files.
 
     Args:
         input_file (str): Path to hmr4d_results.pt file.
         output_dir (str): Directory where .npy files will be saved.
-        smplx_model_path (str): Path to SMPLX model dir.
+        body_model_dir (str): Path to SMPL body model dir.
+        smpl_type (str): Type of body model, smplx or smplh.
         mano_params_file (str): Path to mano_params.pt file.
         device (torch.device): CUDA device for processing.
     """
@@ -63,8 +65,13 @@ def convert_hmr4d_to_npy(input_file, output_dir, smplx_model_path, mano_params_f
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    # Build smplx model
-    smplx_model = SMPLXLayer(model_path=smplx_model_path, use_pca=False).to(device)
+    # Build smplx or smplh model
+    if smpl_type == 'smplx':
+        body_model = SMPLXLayer(model_path=os.path.join(body_model_dir, 'smplx'), use_pca=False).to(device)
+    elif smpl_type == 'smplh':
+        body_model = SMPLHLayer(model_path=os.path.join(body_model_dir, 'smplh'), use_pca=False).to(device)
+    else:
+        raise ValueError(f"Invalid smpl_type: {smpl_type}. Please use 'smplx' or 'smplh'.")
     
     # Extract relevant data
     smpl_params = data['smpl_params_incam']
@@ -94,7 +101,7 @@ def convert_hmr4d_to_npy(input_file, output_dir, smplx_model_path, mano_params_f
             smplx_params = fetch_frame_dict(smpl_params, frame)
 
         # Convert all parameters to vertices in a single batch
-        vertices = smplx_model(**smplx_params).vertices.detach().cpu().numpy()
+        vertices = body_model(**smplx_params).vertices.detach().cpu().numpy()
 
         # Append to frame_data
         for person_idx in range(num_persons):
@@ -110,7 +117,7 @@ def convert_hmr4d_to_npy(input_file, output_dir, smplx_model_path, mano_params_f
 
 def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    convert_hmr4d_to_npy(args.input, args.output, args.smplx_model_path, args.mano_params, device)
+    convert_hmr4d_to_npy(args.input, args.output, args.body_model_dir, args.smpl_type, args.mano_params, device)
 
 
 if __name__ == "__main__":
@@ -118,7 +125,8 @@ if __name__ == "__main__":
     parser.add_argument("--input", required=True, help="Path to hmr4d_results.pt file")
     parser.add_argument("--output", required=True, help="Output directory for .npy files")
     parser.add_argument("--mano_params", type=str, default=None, help="Path to mano_params.pt file")
-    parser.add_argument("--smplx_model_path", type=str, default="inputs/checkpoints/body_models/smplx/", help="Path to smplx model dir")
+    parser.add_argument("--body_model_dir", type=str, default="inputs/checkpoints/body_models/", help="Path to smplx model dir")
+    parser.add_argument("--smpl_type", type=str, default="smplx", choices=['smplx', 'smplh'], help="Type of body model")
     parser.add_argument("--device", default="cuda", help="Device to use for rendering (e.g., 'cuda:0' or 'cpu')")
     args = parser.parse_args()
 
@@ -126,5 +134,5 @@ if __name__ == "__main__":
     print(f"All .npy files have been successfully exported to {args.output}")
 
 '''
-CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_npy_files --input ./outputs/demo_mp_hands/two_persons/hmr4d_results.pt --output ./outputs/demo_mp_hands/two_persons/smpl_results --mano_params ./outputs/demo_mp_hands/two_persons/mano_params.pt
+CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_npy_files --input ./outputs/demo_mp_hands/two_persons/hmr2_results.pt --output ./outputs/demo_mp_hands/two_persons/smpl_results --mano_params ./outputs/demo_mp_hands/two_persons/mano_params.pt
 '''
