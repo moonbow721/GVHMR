@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
+import torchgeometry as tgm
 from pytorch3d.transforms import so3_exp_map, so3_log_map
 from pytorch3d.transforms import matrix_to_quaternion, quaternion_to_axis_angle, matrix_to_rotation_6d
 import pytorch3d.ops.knn as knn
@@ -10,6 +11,31 @@ from pytorch3d.transforms import euler_angles_to_matrix
 import hmr4d.utils.matrix as matrix
 from einops import einsum, rearrange, repeat
 from hmr4d.utils.geo.quaternion import qbetween
+
+
+def axis_angle_to_mat3x3(angle_axis):
+    """
+    Convert 3d vector of axis-angle rotation to 3x3 rotation matrix.
+    Shape:
+        - Input: :Torch:`(N, 3)`
+        - Output: :Torch:`(N, 3, 3)`
+    """
+    rot_mat = tgm.angle_axis_to_rotation_matrix(angle_axis)  # 4x4 rotation matrix
+
+    return rot_mat[:, :3, :3]
+
+
+def mat3x3_to_axis_angle(rot_mat):
+    """
+    Convert 3x3 rotation matrix to 3d vector of axis-angle rotation.
+    Shape:
+        - Input: :Torch:`(N, 3, 3)`
+        - Output: :Torch:`(N, 3)`
+    """
+    rot_mat = torch.cat([rot_mat, torch.zeros((rot_mat.shape[0], 3, 1), device=rot_mat.device).float()], 2)
+    axis_angle = tgm.rotation_matrix_to_angle_axis(rot_mat).reshape(-1, 3)  # axis-angle
+    axis_angle[torch.isnan(axis_angle)] = 0.0
+    return axis_angle
 
 
 def homo_points(points):

@@ -3,7 +3,7 @@ from pytorch3d.transforms import axis_angle_to_matrix, matrix_to_axis_angle, mat
 import hmr4d.utils.matrix as matrix
 from hmr4d import PROJ_ROOT
 
-COCO17_AUG = {k: v.flatten() for k, v in torch.load(PROJ_ROOT / "hmr4d/utils/body_model/coco_aug_dict.pth").items()}
+COCO17_AUG = {k: v.flatten() for k, v in torch.load(PROJ_ROOT / "hmr4d/utils/body_model/coco_aug_dict.pth", weights_only=True).items()}
 COCO17_AUG_CUDA = {}
 COCO17_TREE = [[5, 6], 0, 0, 1, 2, -1, -1, 5, 6, 7, 8, -1, -1, 11, 12, 13, 14, 15, 15, 15, 16, 16, 16]
 

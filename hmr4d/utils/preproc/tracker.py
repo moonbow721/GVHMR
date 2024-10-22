@@ -120,7 +120,6 @@ class Tracker:
             frame_ids = torch.tensor(id_to_frame_ids[track_id])  # (N,)
             if len(frame_ids) < frame_thres * get_video_lwh(video_path)[0]:
                 continue
-            print(f"bbx_xyxys.shape: {torch.tensor(id_to_bbx_xyxys[track_id]).shape}, confs.shape: {torch.tensor(id_to_confs[track_id]).shape}")
             bbx_xyxys = torch.tensor(id_to_bbx_xyxys[track_id])  # (N, 4)
             confs = torch.tensor(id_to_confs[track_id])  # (N,)
 

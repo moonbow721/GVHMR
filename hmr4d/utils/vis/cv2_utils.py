@@ -153,28 +153,29 @@ def draw_kpts_with_conf_batch(frames, kp2d_batch, conf_batch, thickness=2):
 
 
 def draw_coco17_skeleton(img, keypoints, conf_thr=0):
-    use_conf_thr = True if keypoints.shape[1] == 3 else False
+    use_conf_thr = True if keypoints.shape[2] == 3 else False
     img = img.copy()
     # fmt:off
     coco_skel = [[15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]]            
     # fmt:on
-    for bone in coco_skel:
-        if use_conf_thr:
-            kp1 = keypoints[bone[0]][:2].astype(int)
-            kp2 = keypoints[bone[1]][:2].astype(int)
-            kp1_c = keypoints[bone[0]][2]
-            kp2_c = keypoints[bone[1]][2]
-            if kp1_c > conf_thr and kp2_c > conf_thr:
-                img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), (0, 255, 0), 4)
-            if kp1_c > conf_thr:
-                img = cv2.circle(img, (kp1[0], kp1[1]), 6, (0, 255, 0), -1)
-            if kp2_c > conf_thr:
-                img = cv2.circle(img, (kp2[0], kp2[1]), 6, (0, 255, 0), -1)
+    for person in keypoints:
+        for bone in coco_skel:
+            if use_conf_thr:
+                kp1 = person[bone[0]][:2].astype(int)
+                kp2 = person[bone[1]][:2].astype(int)
+                kp1_c = person[bone[0]][2]
+                kp2_c = person[bone[1]][2]
+                if kp1_c > conf_thr and kp2_c > conf_thr:
+                    img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), (0, 255, 0), 4)
+                if kp1_c > conf_thr:
+                    img = cv2.circle(img, (kp1[0], kp1[1]), 6, (0, 255, 0), -1)
+                if kp2_c > conf_thr:
+                    img = cv2.circle(img, (kp2[0], kp2[1]), 6, (0, 255, 0), -1)
 
-        else:
-            kp1 = keypoints[bone[0]][:2].astype(int)
-            kp2 = keypoints[bone[1]][:2].astype(int)
-            img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), (0, 255, 0), 4)
+            else:
+                kp1 = person[bone[0]][:2].astype(int)
+                kp2 = person[bone[1]][:2].astype(int)
+                img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), (0, 255, 0), 4)
     return img
 
 
@@ -186,45 +187,58 @@ def draw_coco17_skeleton_batch(imgs, keypoints_batch, conf_thr=0):
         imgs_out.append(draw_coco17_skeleton(imgs[i], keypoints_batch[i], conf_thr))
     return imgs_out
 
-def draw_coco133_skeleton(img, keypoints, conf_thr=0):
+def draw_coco133_skeleton(img, keypoints, conf_thr=0, line_thickness=3, keypoint_radius=6):
     img = img.copy()
     keypoints = np.asarray(keypoints)
-    use_conf_thr = True if keypoints.shape[1] == 3 else False
+    use_conf_thr = True if keypoints.shape[-1] == 3 else False
 
     # Create a mapping from joint names to their indices
     name_to_id = {v['name']: v['id'] for k, v in dataset_info['keypoint_info'].items()}
 
-    # Loop over each bone in the skeleton
-    for bone_info in dataset_info['skeleton_info'].values():
-        link = bone_info['link']  # Tuple of joint names
-        joint_name1, joint_name2 = link
-        idx1 = name_to_id[joint_name1]
-        idx2 = name_to_id[joint_name2]
+    # Loop over each person
+    for person_keypoints in keypoints:
+        # Loop over each bone in the skeleton
+        for bone_info in dataset_info['skeleton_info'].values():
+            link = bone_info['link']  # Tuple of joint names
+            joint_name1, joint_name2 = link
+            idx1 = name_to_id[joint_name1]
+            idx2 = name_to_id[joint_name2]
 
-        color = tuple(bone_info['color'])  # Convert color to tuple
+            color = tuple(bone_info['color'])  # Convert color to tuple
 
-        kp1 = keypoints[idx1][:2].astype(int)
-        kp2 = keypoints[idx2][:2].astype(int)
+            kp1 = person_keypoints[idx1][:2].astype(int)
+            kp2 = person_keypoints[idx2][:2].astype(int)
 
-        if use_conf_thr:
-            kp1_c = keypoints[idx1][2]
-            kp2_c = keypoints[idx2][2]
-            if kp1_c > conf_thr and kp2_c > conf_thr:
-                img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, 2)
-            if kp1_c > conf_thr:
-                img = cv2.circle(img, (kp1[0], kp1[1]), 3, color, -1)
-            if kp2_c > conf_thr:
-                img = cv2.circle(img, (kp2[0], kp2[1]), 3, color, -1)
-        else:
-            img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, 2)
-            img = cv2.circle(img, (kp1[0], kp1[1]), 3, color, -1)
-            img = cv2.circle(img, (kp2[0], kp2[1]), 3, color, -1)
+            if use_conf_thr:
+                kp1_c = person_keypoints[idx1][2]
+                kp2_c = person_keypoints[idx2][2]
+                if kp1_c > conf_thr and kp2_c > conf_thr:
+                    img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, line_thickness)
+                if kp1_c > conf_thr:
+                    img = cv2.circle(img, (kp1[0], kp1[1]), keypoint_radius, color, -1)
+                if kp2_c > conf_thr:
+                    img = cv2.circle(img, (kp2[0], kp2[1]), keypoint_radius, color, -1)
+            else:
+                img = cv2.line(img, (kp1[0], kp1[1]), (kp2[0], kp2[1]), color, line_thickness)
+                img = cv2.circle(img, (kp1[0], kp1[1]), keypoint_radius, color, -1)
+                img = cv2.circle(img, (kp2[0], kp2[1]), keypoint_radius, color, -1)
+        
+        # Draw face keypoints
+        for i in range(23, 91):  # Face keypoints are from index 23 to 90
+            if use_conf_thr:
+                if person_keypoints[i][2] > conf_thr:
+                    x, y = person_keypoints[i][:2].astype(int)
+                    img = cv2.circle(img, (x, y), keypoint_radius, (255, 255, 255), -1)
+            else:
+                x, y = person_keypoints[i][:2].astype(int)
+                img = cv2.circle(img, (x, y), keypoint_radius, (255, 255, 255), -1)
+    
     return img
 
-def draw_coco133_skeleton_batch(imgs, keypoints_batch, conf_thr=0):
+def draw_coco133_skeleton_batch(imgs, keypoints_batch, conf_thr=0, line_thickness=3, keypoint_radius=6):
     assert len(imgs) == len(keypoints_batch)
     keypoints_batch = to_numpy(keypoints_batch)
     imgs_out = []
     for i in range(len(imgs)):
-        imgs_out.append(draw_coco133_skeleton(imgs[i], keypoints_batch[i], conf_thr))
+        imgs_out.append(draw_coco133_skeleton(imgs[i], keypoints_batch[i], conf_thr, line_thickness, keypoint_radius))
     return imgs_out

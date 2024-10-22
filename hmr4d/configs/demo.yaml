@@ -37,6 +37,7 @@ paths:
   vitpose_video_overlay: ${preprocess_dir}/vitpose_video_overlay.mp4
   vitpose_wholebody: ${preprocess_dir}/vitpose_wholebody.pt
   vitpose_wholebody_video_overlay: ${preprocess_dir}/vitpose_wholebody_video_overlay.mp4
+  mano_params: ${preprocess_dir}/mano_params.pt
   hmr4d_results: ${output_dir}/hmr4d_results.pt
   incam_video: ${output_dir}/1_incam.mp4
   global_video: ${output_dir}/2_global.mp4

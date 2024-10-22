@@ -149,7 +149,7 @@ def run_preprocess(cfg):
         Log.info(f"[Preprocess] vitpose from {paths.vitpose}")
     if verbose:
         video = read_video_np(video_path)
-        video_overlay = draw_coco17_skeleton_batch(video, vitpose[0], 0.5)
+        video_overlay = draw_coco17_skeleton_batch(video, vitpose.transpose(0, 1), 0.5)
         save_video(video_overlay, paths.vitpose_video_overlay, fps=cfg.fps)
         
     # Get vit features

@@ -194,7 +194,7 @@ def build_model(model_name, checkpoint=None):
 
     pose = VitPoseModel(backbone, head)
     if checkpoint is not None:
-        check = torch.load(checkpoint)
+        check = torch.load(checkpoint, weights_only=True)
         # part_features = 256
         # state_dict = check["state_dict"]
         # new_state_dict = copy.deepcopy(state_dict)
