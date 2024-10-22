@@ -1,4 +1,5 @@
 import os
+import shutil
 import numpy as np
 import cv2
 import torch
@@ -50,7 +51,7 @@ def parse_args_to_cfg():
     # Put all args to cfg
     parser = argparse.ArgumentParser()
     parser.add_argument("--video", type=str, default="inputs/demo/dance_3.mp4")
-    parser.add_argument("--video_name", type=str, default=None, help="by default to video_name")
+    parser.add_argument("--video_name", type=str, default=None, help="by default to video.stem")
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
@@ -115,10 +116,10 @@ def parse_args_to_cfg():
     
     valid_video_path = os.path.abspath(cfg.video_path).replace('0_input_video.mp4', 'valid_video.mp4')
     try:
-        os.symlink(os.path.abspath(cfg.video_path), valid_video_path)
+        shutil.copy2(os.path.abspath(cfg.video_path), valid_video_path)
     except FileExistsError:
         os.remove(valid_video_path)
-        os.symlink(os.path.abspath(cfg.video_path), valid_video_path)
+        shutil.copy2(os.path.abspath(cfg.video_path), valid_video_path)
     
     return cfg
 

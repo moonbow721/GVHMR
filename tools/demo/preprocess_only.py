@@ -1,4 +1,5 @@
 import os
+import shutil
 import cv2
 import torch
 import numpy as np
@@ -106,10 +107,10 @@ def parse_args_to_cfg():
     
     valid_video_path = os.path.abspath(cfg.video_path).replace('0_input_video.mp4', 'valid_video.mp4')
     try:
-        os.symlink(os.path.abspath(cfg.video_path), valid_video_path)
+        shutil.copy2(os.path.abspath(cfg.video_path), valid_video_path)
     except FileExistsError:
         os.remove(valid_video_path)
-        os.symlink(os.path.abspath(cfg.video_path), valid_video_path)
+        shutil.copy2(os.path.abspath(cfg.video_path), valid_video_path)
     
     return cfg
 
