@@ -40,9 +40,6 @@ python -m tools.demo.demo_multiperson --video=docs/example_video/two_persons.mp4
 python -m tools.demo.demo_multiperson --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
 ```
 
-### TODO:
-- Merge MANO from hamer into smplx results.
-
 ### Reproduce
 1. **Test**:
 To reproduce the 3DPW, RICH, and EMDB results in a single run, use the following command:

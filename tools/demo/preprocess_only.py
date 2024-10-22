@@ -50,8 +50,6 @@ def parse_args_to_cfg():
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use for rendering")
     parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
-    parser.add_argument("--export_npy", action="store_true", help="If true, export npy files")
-    parser.add_argument("--skip_render", action="store_true", help="If true, skip rendering")
     args = parser.parse_args()
 
     # Set device
@@ -184,7 +182,7 @@ def run_preprocess(cfg):
         hamer_dataloader = load_images(frames, vitpose_wholebody, model_cfg_hamer)
         all_mano_params = {'left_hand_global_orient': [], 'left_hand_pose': [], 'left_hand_valid': [], 
                         'right_hand_global_orient': [], 'right_hand_pose': [], 'right_hand_valid': []}
-        for batch in hamer_dataloader:
+        for batch in tqdm(hamer_dataloader, desc="Hamer"):
             batch = recursive_to(batch, target="cuda")
             mano_poses = predict_mano(batch, hamer_model)
             for k, v in mano_poses.items():
@@ -317,11 +315,6 @@ if __name__ == "__main__":
 
     # ===== Preprocess and save to disk ===== #
     run_preprocess(cfg)
-
-    if cfg.export_npy:
-        smpl_folder = os.path.join(cfg.output_dir, "smpl_results")
-        subprocess.run(["python", "-m", "tools.demo.export_npy_files", "--input", paths.hmr4d_results, "--output", smpl_folder])
-
 """
 CUDA_VISIBLE_DEVICES=2, python -m tools.demo.preprocess_only --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
 CUDA_VISIBLE_DEVICES=7, python -m tools.demo.preprocess_only --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --verbose

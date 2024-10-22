@@ -1,7 +1,7 @@
 import os
+import numpy as np
 import cv2
 import torch
-import numpy as np
 import argparse
 from hmr4d.utils.pylogger import Log
 import hydra
@@ -190,7 +190,7 @@ def run_preprocess(cfg):
         hamer_dataloader = load_images(frames, vitpose_wholebody, model_cfg_hamer)
         all_mano_params = {'left_hand_global_orient': [], 'left_hand_pose': [], 'left_hand_valid': [], 
                            'right_hand_global_orient': [], 'right_hand_pose': [], 'right_hand_valid': []}
-        for batch in hamer_dataloader:
+        for batch in tqdm(hamer_dataloader, desc="Hamer"):
             batch = recursive_to(batch, target="cuda")
             mano_poses = predict_mano(batch, hamer_model)
             for k, v in mano_poses.items():

@@ -1,6 +1,6 @@
 import os
-import torch
 import numpy as np
+import torch
 import argparse
 from pathlib import Path
 from tqdm import tqdm
@@ -126,5 +126,5 @@ if __name__ == "__main__":
     print(f"All .npy files have been successfully exported to {args.output}")
 
 '''
-CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_npy_files --input ./outputs/demo_mp_hands/two_persons/hmr4d_results.pt --output ./outputs/demo_mp_hands/two_persons/smpl_results --mano_params ./outputs/demo_mp_hands/two_persons/preprocess/mano_params.pt
+CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_npy_files --input ./outputs/demo_mp_hands/two_persons/hmr4d_results.pt --output ./outputs/demo_mp_hands/two_persons/smpl_results --mano_params ./outputs/demo_mp_hands/two_persons/mano_params.pt
 '''
