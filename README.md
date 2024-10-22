@@ -111,9 +111,9 @@ The main reconstruction results are stored in `hmr4d_results.pt`, which contains
 1. `smpl_params_global` and `smpl_params_incam`:
    - SMPL parameters for global and in-camera coordinate systems
    - Each contains:
-     - `body_pose`: Tensor of shape (P, L, 63)
+     - `body_pose`: Tensor of shape (P, L, 21, 3, 3)
      - `betas`: Tensor of shape (P, L, 10)
-     - `global_orient`: Tensor of shape (P, L, 3)
+     - `global_orient`: Tensor of shape (P, L, 1, 3, 3)
      - `transl`: Tensor of shape (P, L, 3)
 
 2. `K_fullimg`:
