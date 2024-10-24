@@ -45,7 +45,7 @@ class SLAMModel(object):
             return False
 
         image = torch.from_numpy(image).permute(2, 0, 1).cuda()
-        intrinsics = intrinsics.cuda()  # [fx, fy, cx, cy]
+        intrinsics = torch.from_numpy(intrinsics).cuda()  # [fx, fy, cx, cy]
 
         if self.slam is None:
             cfg.merge_from_file(self.dpvo_cfg)
@@ -92,11 +92,11 @@ def video_stream(queue, imagedir, intrinsics, stride, skip=0, resize=0.5):
         image = image[: h - h % 16, : w - w % 16]
 
         intrinsics_ = intrinsics.clone() * resize
-        queue.put((t, image, intrinsics_))
+        queue.put((t, image, intrinsics_.cpu().numpy()))
 
         t += 1
 
-    queue.put((-1, image, intrinsics))  # -1 will terminate the process
+    queue.put((-1, image, intrinsics.cpu().numpy()))  # -1 will terminate the process
     cap.release()
 
     # wait for the queue to be empty, otherwise the process will end immediately
