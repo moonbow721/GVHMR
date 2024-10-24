@@ -48,15 +48,10 @@ def parse_args_to_cfg():
     parser.add_argument("--output_root", type=str, default=None, help="by default to outputs/demo")
     parser.add_argument("-s", "--static_cam", action="store_true", help="If true, skip DPVO")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
-    parser.add_argument("--device", type=str, default="cuda:0", help="Device to use for rendering")
     parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
     args = parser.parse_args()
 
-    # Set device
-    device_id = args.device.split(":")[1]
-    os.environ["CUDA_VISIBLE_DEVICES"] = device_id
-    
     # Input
     video_path = Path(args.video)
     fps = get_video_fps(video_path) if not args.recreate_video else 30
@@ -128,7 +123,7 @@ def run_preprocess(cfg):
         tracker = Tracker()
         bbx_xyxy, bbx_conf = tracker.get_all_tracks(video_path, frame_thres=0.5)  # (P, L, 4), (P, L) discard short tracks
         bbx_xys = get_bbx_xys_from_xyxy_batch(bbx_xyxy, base_enlarge=1.2).float()  # (P, L, 3) apply aspect ratio and enlarge
-        torch.save({"bbx_xyxy": bbx_xyxy, "bbx_xys": bbx_xys, "bbx_conf": bbx_conf}, paths.bbx)
+        torch.save({"bbx_xyxy": bbx_xyxy.detach().cpu(), "bbx_xys": bbx_xys.detach().cpu(), "bbx_conf": bbx_conf.detach().cpu()}, paths.bbx)
         del tracker
     else:
         bbx_xys = torch.load(paths.bbx, weights_only=True)["bbx_xys"]
@@ -148,7 +143,7 @@ def run_preprocess(cfg):
     if not Path(paths.vitpose_wholebody).exists():
         vitpose_extractor = VitPoseWholebodyExtractor(batch_size=batch_size)
         vitpose_wholebody, cropped_imgs = vitpose_extractor.extract_multiperson(video_path, bbx_xys)  # (P, F, 133, 3)
-        torch.save(vitpose_wholebody, paths.vitpose_wholebody)
+        torch.save(vitpose_wholebody.detach().cpu(), paths.vitpose_wholebody)
         del vitpose_extractor
     else:
         vitpose_wholebody = torch.load(paths.vitpose_wholebody, weights_only=True)
@@ -161,7 +156,7 @@ def run_preprocess(cfg):
     # Get VitPose
     if not Path(paths.vitpose).exists():
         vitpose = vitpose_wholebody[:, :, :17, :]  # (P, F, 17, 3)
-        torch.save(vitpose, paths.vitpose)
+        torch.save(vitpose.detach().cpu(), paths.vitpose)
     else:
         vitpose = torch.load(paths.vitpose, weights_only=True)
         Log.info(f"[Preprocess] vitpose from {paths.vitpose}")
@@ -186,7 +181,7 @@ def run_preprocess(cfg):
             for k, v in mano_poses.items():
                 all_mano_params[k].append(chunk_first_axis(v, person_num))
         for k, v in all_mano_params.items():
-            all_mano_params[k] = torch.cat(v, dim=0).transpose(0, 1)
+            all_mano_params[k] = torch.cat(v, dim=0).transpose(0, 1).detach().cpu()
         torch.save(all_mano_params, paths.mano_params)
     else:
         Log.info(f"[Preprocess] mano_params from {paths.mano_params}")
