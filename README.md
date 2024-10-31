@@ -120,7 +120,11 @@ The main reconstruction results are stored in `hmr4d_results.pt`, which contains
    - Camera intrinsic matrix
    - Tensor of shape (L, 3, 3), same across all frames
 
-3. `net_outputs`:
+3. `focal_length`, `width`, `height`:
+   - Focal length, width, and height of the video frames
+   - Tensor of shape (L,)
+
+4. `net_outputs`:
    - Additional network outputs (not used for now)
 
 ## Warning

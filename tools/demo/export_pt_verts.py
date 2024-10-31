@@ -80,7 +80,10 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
     # Process each frame
     frame_data = {
         'verts': [],
-        'cam_t': []
+        'cam_t': [],
+        'width': list(map(int, data['width'].tolist())),
+        'height': list(map(int, data['height'].tolist())),
+        'focal_length': list(map(float, data['focal_length'].tolist()))
     }
     for frame in tqdm(range(num_frames), desc="Processing frames"):
         # Batch processing for all persons in the current frame
@@ -129,5 +132,5 @@ if __name__ == "__main__":
     main(args)
 
 '''
-CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_pt_verts --input ./outputs/demo_mp_hands/two_persons/hmr2_results.pt --output ./outputs/demo_mp_hands/two_persons/smpl_verts.pt --mano_params ./outputs/demo_mp_hands/two_persons/mano_params.pt
+CUDA_VISIBLE_DEVICES=7 python -m tools.demo.export_pt_verts --input /mnt/data/jing/Video_Generation/Data/video_dataset_champ_debug/debug_gvhmr_folder/two_persons/hmr4d_results.pt --output /mnt/data/jing/Video_Generation/Data/video_dataset_champ_debug/debug_gvhmr_folder/two_persons/smpl_verts.pt --mano_params /mnt/data/jing/Video_Generation/Data/video_dataset_champ_debug/debug_gvhmr_folder/two_persons/mano_params.pt
 '''

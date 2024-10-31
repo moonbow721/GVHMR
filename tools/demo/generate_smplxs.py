@@ -507,6 +507,9 @@ def convert_final_results(pred):
         smpl_params["body_pose"] = axis_angle_to_mat3x3(body_pose.reshape(-1, 3)).reshape(person_num, frame_num, 21, 3, 3)
         smpl_params["global_orient"] = axis_angle_to_mat3x3(global_orient.reshape(-1, 3)).reshape(person_num, frame_num, 1, 3, 3)
         pred[smpl_type] = smpl_params
+    pred['width'] = pred['K_fullimg'][:, 0, 2] * 2
+    pred['height'] = pred['K_fullimg'][:, 1, 2] * 2
+    pred['focal_length'] = pred['K_fullimg'][:, 0, 0]
     return pred
 
 
@@ -553,7 +556,7 @@ if __name__ == "__main__":
     
 """
 CUDA_VISIBLE_DEVICES=2, python -m tools.demo.generate_smplxs --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
-CUDA_VISIBLE_DEVICES=7, python -m tools.demo.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --skip_render --export_npy
+CUDA_VISIBLE_DEVICES=6, python -m tools.demo.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --skip_render --export_npy
 CUDA_VISIBLE_DEVICES=7, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_smplx_labeling/sapiens/example_data2/video00024_010.mp4 --output_root outputs/demo --verbose
 CUDA_VISIBLE_DEVICES=3, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
 """
