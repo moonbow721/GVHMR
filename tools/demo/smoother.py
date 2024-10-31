@@ -1,4 +1,3 @@
-print('Debug: Running smoother.py')
 import numpy as np
 import torch
 import argparse

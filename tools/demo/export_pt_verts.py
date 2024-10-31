@@ -83,7 +83,8 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
         'cam_t': [],
         'width': list(map(int, data['width'].tolist())),
         'height': list(map(int, data['height'].tolist())),
-        'focal_length': list(map(float, data['focal_length'].tolist()))
+        'focal_length': list(map(float, data['focal_length'].tolist())),
+        'fps': data['fps']
     }
     for frame in tqdm(range(num_frames), desc="[Export_pt_verts] Processing frames"):
         # Batch processing for all persons in the current frame

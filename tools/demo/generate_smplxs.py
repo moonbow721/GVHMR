@@ -532,6 +532,7 @@ if __name__ == "__main__":
         tic = Log.sync_time()
         pred = model.predict_multiperson(data, static_cam=cfg.static_cam)
         pred = detach_to_cpu(pred)
+        pred['fps'] = cfg.fps
         data_time = data["length"] / cfg.fps
         Log.info(f"[HMR4D] Elapsed: {Log.sync_time() - tic:.2f}s for data-length={data_time:.1f}s")
         torch.save(convert_final_results(pred), paths.hmr4d_results)
@@ -557,6 +558,6 @@ if __name__ == "__main__":
 """
 CUDA_VISIBLE_DEVICES=2, python -m tools.demo.generate_smplxs --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
 CUDA_VISIBLE_DEVICES=6, python -m tools.demo.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --skip_render --export_npy
-CUDA_VISIBLE_DEVICES=7, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_smplx_labeling/sapiens/example_data2/video00024_010.mp4 --output_root outputs/demo --verbose
+CUDA_VISIBLE_DEVICES=7, python -m tools.demo.generate_smplxs --video=docs/example_video/tiktok_frame.mp4 --output_root outputs/demo_single_frame --skip_render -s
 CUDA_VISIBLE_DEVICES=3, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
 """
