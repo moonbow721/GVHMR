@@ -85,7 +85,7 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
         'height': list(map(int, data['height'].tolist())),
         'focal_length': list(map(float, data['focal_length'].tolist()))
     }
-    for frame in tqdm(range(num_frames), desc="Processing frames"):
+    for frame in tqdm(range(num_frames), desc="[Export_pt_verts] Processing frames"):
         # Batch processing for all persons in the current frame
         transl = smpl_params['transl'][:, frame][:, None, :]           # (num_persons, 1, 3)
         # global_orient = smpl_params['global_orient'][:, frame]  # (num_persons, 1, 3, 3)
@@ -106,8 +106,8 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
         frame_data['verts'].append(vertices)  # canonicalized
         frame_data['cam_t'].append(transl)  # camera translation
 
-    frame_data['verts'] = torch.stack(frame_data['verts'], dim=1)   # (num_persons, num_frames, num_verts, 3)
-    frame_data['cam_t'] = torch.stack(frame_data['cam_t'], dim=1)   # (num_persons, num_frames, 1, 3)
+    frame_data['verts'] = torch.stack(frame_data['verts'], dim=1).detach().cpu()   # (num_persons, num_frames, num_verts, 3)
+    frame_data['cam_t'] = torch.stack(frame_data['cam_t'], dim=1).detach().cpu()   # (num_persons, num_frames, 1, 3)
     # Save the frame data as a .npy file
     torch.save(frame_data, output_file)
 
