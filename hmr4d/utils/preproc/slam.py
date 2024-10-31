@@ -3,13 +3,9 @@ import time
 import torch
 from multiprocessing import Process, Queue
 
-try:
-    from dpvo.utils import Timer
-    from dpvo.dpvo import DPVO
-    from dpvo.config import cfg
-except:
-    pass
-
+from dpvo.utils import Timer
+from dpvo.dpvo import DPVO
+from dpvo.config import cfg
 
 from hmr4d import PROJ_ROOT
 from hmr4d.utils.geo.hmr_cam import estimate_focal_length
