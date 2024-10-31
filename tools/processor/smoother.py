@@ -149,7 +149,7 @@ if __name__ == "__main__":
                 print(f"Generating smoothed SMPL vertices from {hmr_smoothed_path}...")
                 mano_path = str(mano_smoothed_path) if mano_smoothed_path.exists() else None
                 
-                cmd = ["python", "-m", "tools.demo.export_pt_verts", 
+                cmd = ["python", "-m", "tools.processor.export_pt_verts", 
                     "--input", str(hmr_smoothed_path),
                     "--output", verts_pt_path,
                     "--smpl_type", "smplx" if "hmr4d" in hmr_file else "smplh",   # hmr4d_results.pt uses smplx, hmr2_results.pt uses smplh
@@ -163,5 +163,5 @@ if __name__ == "__main__":
                 break  # Only need to process one HMR file, hmr4d_results.pt first
 
 '''
-python -m tools.demo.smoother --data_dir /mnt/data/jing/Video_Generation/Data/video_dataset_champ_debug/debug_gvhmr_folder/two_persons --window_size 5 --sigma 1.0 --device cuda:7
+python -m tools.processor.smoother --data_dir /mnt/data/jing/Video_Generation/Data/video_dataset_champ_debug/debug_gvhmr_folder/two_persons --window_size 5 --sigma 1.0 --device cuda:7
 '''

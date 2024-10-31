@@ -312,8 +312,8 @@ if __name__ == "__main__":
     subprocess.run(["rm", cfg.video_path])
     
 """
-CUDA_VISIBLE_DEVICES=2, python -m tools.demo.preprocess_only --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
-CUDA_VISIBLE_DEVICES=7, python -m tools.demo.preprocess_only --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --verbose
-CUDA_VISIBLE_DEVICES=7, python -m tools.demo.preprocess_only --video=/mnt/data/jing/Video_Generation/video_data_repos/video_smplx_labeling/sapiens/example_data2/video00024_010.mp4 --output_root outputs/demo --verbose
-CUDA_VISIBLE_DEVICES=3, python -m tools.demo.preprocess_only --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
+CUDA_VISIBLE_DEVICES=2, python -m tools.processor.preprocess_only --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
+CUDA_VISIBLE_DEVICES=7, python -m tools.processor.preprocess_only --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --verbose
+CUDA_VISIBLE_DEVICES=7, python -m tools.processor.preprocess_only --video=/mnt/data/jing/Video_Generation/video_data_repos/video_smplx_labeling/sapiens/example_data2/video00024_010.mp4 --output_root outputs/demo --verbose
+CUDA_VISIBLE_DEVICES=3, python -m tools.processor.preprocess_only --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
 """

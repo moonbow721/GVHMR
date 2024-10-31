@@ -57,7 +57,6 @@ def parse_args_to_cfg():
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for VitPose and VitFeat")
     parser.add_argument("--recreate_video", action="store_true", help="If true, encode the original video to 30 fps for visualization")
     parser.add_argument("--verbose", action="store_true", help="If true, draw intermediate results")
-    parser.add_argument("--export_npy", action="store_true", help="If true, export npy files")
     parser.add_argument("--export_pt", action="store_true", help="If true, export pt files")
     parser.add_argument("--skip_render", action="store_true", help="If true, skip rendering")
     args = parser.parse_args()
@@ -77,7 +76,6 @@ def parse_args_to_cfg():
             f"verbose={args.verbose}",
             f"+batch_size={args.batch_size}",
             f"+fps={round(fps)}",
-            f"+export_npy={args.export_npy}",
             f"+export_pt={args.export_pt}",
             f"+skip_render={args.skip_render}",
         ]
@@ -548,16 +546,13 @@ if __name__ == "__main__":
         if not Path(paths.incam_global_horiz_video).exists():
             Log.info("[Merge Videos]")
             merge_videos_horizontal([paths.incam_video, paths.global_video], paths.incam_global_horiz_video)
-    if cfg.export_npy:
-        smpl_folder = os.path.join(cfg.output_dir, "smpl_results")
-        subprocess.run(["python", "-m", "tools.demo.export_npy_files", "--input", paths.hmr4d_results, "--output", smpl_folder, "--mano_params", paths.mano_params])
     if cfg.export_pt:
         verts_pt_path = os.path.join(cfg.output_dir, "smpl_verts.pt")
-        subprocess.run(["python", "-m", "tools.demo.export_pt_verts", "--input", paths.hmr4d_results, "--output", verts_pt_path, "--mano_params", paths.mano_params])
+        subprocess.run(["python", "-m", "tools.processor.export_pt_verts", "--input", paths.hmr4d_results, "--output", verts_pt_path, "--mano_params", paths.mano_params])
     
 """
-CUDA_VISIBLE_DEVICES=2, python -m tools.demo.generate_smplxs --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
-CUDA_VISIBLE_DEVICES=6, python -m tools.demo.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --skip_render --export_npy
-CUDA_VISIBLE_DEVICES=7, python -m tools.demo.generate_smplxs --video=docs/example_video/tiktok_frame.mp4 --output_root outputs/demo_single_frame --skip_render -s
-CUDA_VISIBLE_DEVICES=3, python -m tools.demo.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
+CUDA_VISIBLE_DEVICES=2, python -m tools.processor.generate_smplxs --video=docs/example_video/vertical_dance.mp4 --output_root outputs/demo_mp -s
+CUDA_VISIBLE_DEVICES=6, python -m tools.processor.generate_smplxs --video=docs/example_video/two_persons.mp4 --output_root outputs/demo_mp_hands --skip_render --export_pt
+CUDA_VISIBLE_DEVICES=7, python -m tools.processor.generate_smplxs --video=docs/example_video/tiktok_frame.mp4 --output_root outputs/demo_single_frame --skip_render -s
+CUDA_VISIBLE_DEVICES=3, python -m tools.processor.generate_smplxs --video=/mnt/data/jing/Video_Generation/video_data_repos/video_preprocessor/WHAM/examples/dance2.mp4 --output_root outputs/demo_mp
 """
