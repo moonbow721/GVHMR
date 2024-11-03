@@ -42,7 +42,7 @@ def fetch_frame_dict(all_dict, frame_idx):
     return frame_dict
     
 
-def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano_params_file, device):
+def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano_params_file, device, num_betas):
     """
     Convert hmr4d_results.pt to a .pt file containing vertices and camera translations.
 
@@ -64,7 +64,7 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
 
     # Build smplx or smplh model
     if smpl_type == 'smplx':
-        body_model = SMPLXLayer(model_path=os.path.join(body_model_dir, 'smplx'), use_pca=False).to(device)
+        body_model = SMPLXLayer(model_path=os.path.join(body_model_dir, 'smplx'), use_pca=False, num_betas=num_betas).to(device)
     elif smpl_type == 'smplh':
         body_model = SMPLHLayer(model_path=os.path.join(body_model_dir, 'smplh'), use_pca=False).to(device)
     else:
@@ -117,7 +117,7 @@ def convert_hmr4d_to_pt(input_file, output_file, body_model_dir, smpl_type, mano
 
 def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    convert_hmr4d_to_pt(args.input, args.output, args.body_model_dir, args.smpl_type, args.mano_params, device)
+    convert_hmr4d_to_pt(args.input, args.output, args.body_model_dir, args.smpl_type, args.mano_params, device, args.num_betas)
 
 
 if __name__ == "__main__":
@@ -127,9 +127,11 @@ if __name__ == "__main__":
     parser.add_argument("--mano_params", type=str, default=None, help="Path to mano_params.pt file")
     parser.add_argument("--body_model_dir", type=str, default="inputs/checkpoints/body_models/", help="Path to smplx model dir")
     parser.add_argument("--smpl_type", type=str, default="smplx", choices=['smplx', 'smplh'], help="Type of body model")
+    parser.add_argument("--num_betas", type=int, default=10, help="Number of betas to use for smplx")
     parser.add_argument("--device", default="cuda", help="Device to use for rendering (e.g., 'cuda:0' or 'cpu')")
     args = parser.parse_args()
 
+    print(f"Exporting {args.input} to {args.output} with smpl_type={args.smpl_type} and num_betas={args.num_betas}")
     main(args)
 
 '''

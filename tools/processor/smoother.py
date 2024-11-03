@@ -33,7 +33,7 @@ def weighted_average_smooth(data, window_size=5, weights=None):
     if weights is None:
         weights = gaussian_weights(window_size).to(data.device)
     else:
-        weights = torch.tensor(weights, dtype=torch.float32).to(data.device)
+        weights = weights.float().to(data.device)
         weights = weights / weights.sum()  # Normalize weights to sum to 1
 
     half_window = window_size // 2
@@ -108,21 +108,46 @@ if __name__ == "__main__":
     parser.add_argument('--window_size', type=int, default=5, help='Size of smoothing window (must be odd)')
     parser.add_argument('--sigma', type=float, default=1.0, help='Sigma for Gaussian weights')
     parser.add_argument('--data_dir', type=str, required=True, help='Directory containing SMPL parameters')
+    parser.add_argument('--use_afi2_betas', action='store_true', help='Whether to use AFI2 betas')
+    parser.add_argument('--use_afi2_results', action='store_true', help='Whether to use all AFI2 results (poses, betas, ...)')
     parser.add_argument('--export_verts', action='store_true', help='Export smoothed SMPL vertices')
     parser.add_argument('--device', type=str, default='cuda', help='Device to run smoothing on')
     args = parser.parse_args()
 
     # Process each file in data directory
     data_dir = Path(args.data_dir)
+    smpl_type, num_betas = None, 10
     
+    if args.use_afi2_betas:
+        afi_file = 'afi2_results.pt'
+        if os.path.exists(data_dir / afi_file):
+            print(f"Processing {afi_file}...")
+            afi_data = torch.load(data_dir / afi_file, weights_only=True, map_location=args.device)
+            betas = afi_data['smpl_params_incam']['betas']
+            transl = afi_data['smpl_params_incam']['transl']
+            focal_length = afi_data['focal_length']
+            print(f"Loaded betas from {afi_file}")
+            smpl_type, num_betas = 'smplx', 16
+        else:
+            print(f"Warning: File {afi_file} does not exist in {data_dir}. Skipping AFI2 betas replacement.")
+            
     # Process HMR results
-    hmr_files = ['hmr4d_results.pt', 'hmr2_results.pt']
-    weights=gaussian_weights(args.window_size, args.sigma)
+    if args.use_afi2_results:
+        hmr_files = ['afi2_results.pt']
+        smpl_type, num_betas = 'smplx', 16
+    else:
+        hmr_files = ['hmr4d_results.pt', 'hmr2_results.pt']
+    weights = gaussian_weights(args.window_size, args.sigma)
     for hmr_file in hmr_files:
         hmr_path = data_dir / hmr_file
         if hmr_path.exists():
             print(f"Processing {hmr_file}...")
-            data = torch.load(hmr_path, map_location=args.device)
+            data = torch.load(hmr_path, weights_only=True, map_location=args.device)
+            if args.use_afi2_betas and os.path.exists(data_dir / afi_file):
+                data['smpl_params_incam']['betas'] = betas
+                data['smpl_params_incam']['transl'] = transl
+                data['focal_length'] = focal_length
+                print(f"Replaced betas in {hmr_file} with AFI2 results")
             smooth_parameters(data, dict_type='hmr', window_size=args.window_size, weights=weights)
             save_path = data_dir / hmr_file.replace('.pt', '_smoothed.pt')
             torch.save(data, save_path)
@@ -133,7 +158,7 @@ if __name__ == "__main__":
     weights=gaussian_weights(args.window_size, args.sigma)
     if mano_path.exists():
         print("Processing mano_params.pt...")
-        data = torch.load(mano_path, map_location=args.device)
+        data = torch.load(mano_path, weights_only=True, map_location=args.device)
         smooth_parameters(data, dict_type='mano', window_size=args.window_size, weights=weights)
         save_path = data_dir / 'mano_params_smoothed.pt'
         torch.save(data, save_path)
@@ -149,10 +174,14 @@ if __name__ == "__main__":
                 print(f"Generating smoothed SMPL vertices from {hmr_smoothed_path}...")
                 mano_path = str(mano_smoothed_path) if mano_smoothed_path.exists() else None
                 
+                if smpl_type is None:
+                    smpl_type = "smplh" if "hmr2" in hmr_file else "smplx"
+                    
                 cmd = ["python", "-m", "tools.processor.export_pt_verts", 
                     "--input", str(hmr_smoothed_path),
                     "--output", verts_pt_path,
-                    "--smpl_type", "smplx" if "hmr4d" in hmr_file else "smplh",   # hmr4d_results.pt uses smplx, hmr2_results.pt uses smplh
+                    "--smpl_type", smpl_type,   # hmr4d_results.pt uses smplx, hmr2_results.pt uses smplh
+                    "--num_betas", str(num_betas),
                     "--device", args.device]
                 
                 if mano_path:
